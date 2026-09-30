@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 2 Job System**. 기반 구조와 함께 Job 생성·조회·취소·재시도, 상태 전이, Queue 위치, 단계 기반 진행률과 Mock Worker 실행이 구현되어 있습니다. 음성 업로드와 실제 모델 추론은 후속 이슈가 완료될 때까지 의도적으로 비활성화되어 있습니다.
+> 현재 범위: **Phase 3 Audio Pipeline**. Job System과 함께 미디어 형식 검증, ffprobe 검사, 품질 측정, 선택적 denoise/trim/normalization, 모델용 mono PCM WAV 변환이 구현되어 있습니다. 업로드 API와 실제 모델 추론은 후속 이슈에서 연결합니다.
 
 ## 주요 기능
 
@@ -45,6 +45,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  ├─ alembic/             # PostgreSQL schema migration
 │  ├─ app/
 │  │  ├─ api/              # FastAPI route와 response schema
+│  │  ├─ audio/            # magic 검증, ffmpeg adapter, 전처리 pipeline
 │  │  ├─ core/             # 환경 설정과 JSON logging
 │  │  ├─ db/               # SQLAlchemy model/session
 │  │  ├─ models/           # VoiceModel, Mock adapter, registry
@@ -73,6 +74,8 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 - `backend/app/models/base.py`: 모든 AI adapter가 지켜야 하는 lifecycle 계약
 - `backend/app/models/registry.py`: 모델 key/capability별 동적 선택
 - `backend/app/services/job_service.py`: 멱등 생성, 상태 전이, 취소·재시도, ETA
+- `backend/app/services/file_service.py`: 원본/정제본을 분리하는 안전한 ingest orchestration
+- `backend/app/audio/ffmpeg.py`: shell을 사용하지 않는 ffprobe/ffmpeg 실행과 품질 분석
 - `backend/app/queue/`: API 테스트와 Celery를 분리하는 Queue port/adapter
 - `backend/app/storage/local.py`: UUID key와 경로 순회 방어를 갖춘 개발 저장소
 - `backend/app/workers/inference_worker.py`: API와 inference 프로세스의 경계
@@ -225,7 +228,7 @@ curl -X POST http://localhost:8000/api/jobs \
 
 - [x] Phase 1: repository, API/UI/DB/Docker/문서/CI 기반
 - [x] Phase 2: Job 생성, 상태 전이, Queue, 진행률, 취소, retry
-- [ ] Phase 3: 미디어 검증, ffmpeg, VAD/normalize/denoise
+- [x] Phase 3: 미디어 검증, ffmpeg, VAD/normalize/denoise
 - [ ] Phase 4: 동의 기반 Voice Profile
 - [ ] Phase 5: 일반/장문 TTS
 - [ ] Phase 6: Speech VC
