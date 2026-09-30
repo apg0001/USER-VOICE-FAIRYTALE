@@ -18,6 +18,8 @@ class JobCreateRequest(BaseModel):
     def validate_mode_input(self) -> "JobCreateRequest":
         if self.mode in {JobMode.GENERAL_TTS, JobMode.LONG_FORM_TTS} and not self.input_text:
             raise ValueError("TTS 작업에는 input_text가 필요합니다.")
+        if self.mode in {JobMode.GENERAL_TTS, JobMode.LONG_FORM_TTS} and not self.voice_profile_id:
+            raise ValueError("TTS 작업에는 voice_profile_id가 필요합니다.")
         if self.mode in {
             JobMode.SPEECH_VOICE_CONVERSION,
             JobMode.SINGING_VOICE_CONVERSION,
@@ -44,6 +46,14 @@ class JobResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    outputs: list["JobOutputResponse"] = Field(default_factory=list)
+
+
+class JobOutputResponse(BaseModel):
+    id: str
+    content_type: str
+    duration_seconds: float | None
+    download_url: str
 
 
 class JobListResponse(BaseModel):
