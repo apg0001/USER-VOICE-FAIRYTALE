@@ -39,6 +39,8 @@ def client(tmp_path) -> Iterator[TestClient]:  # type: ignore[no-untyped-def]
         storage_path=tmp_path / "storage",
         model_path=tmp_path / "models",
         use_mock_inference=True,
+        sse_poll_interval_seconds=0.01,
+        sse_heartbeat_seconds=0.02,
     )
     with TestClient(create_app(settings)) as test_client:
         yield test_client
@@ -59,6 +61,8 @@ def job_client(tmp_path, recording_queue: RecordingQueue) -> Iterator[TestClient
         storage_path=tmp_path / "storage",
         model_path=tmp_path / "models",
         use_mock_inference=True,
+        sse_poll_interval_seconds=0.01,
+        sse_heartbeat_seconds=0.02,
     )
     with TestClient(create_app(settings, job_queue=recording_queue)) as test_client:
         yield test_client

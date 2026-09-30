@@ -1,11 +1,15 @@
 import asyncio
+import json
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 from conftest import RecordingQueue
 from fastapi.testclient import TestClient
 
-from app.db.models import JobOutput, VoiceProfile
+from app.db.models import JobOutput, JobStatus, VoiceProfile
+from app.services.job_service import JobService
 from app.services.user_service import resolve_user
 
 HEADERS = {"X-User-ID": "user-alice", "Idempotency-Key": "request-00000001"}
@@ -180,4 +184,83 @@ def test_job_output_is_listed_and_owner_can_download(
     assert downloaded.status_code == 200
     assert downloaded.content == b"RIFFmock-wave"
     assert hidden.status_code == 404
+
+
+def test_terminal_job_event_stream_is_owned_and_resumes_event_id(
+    job_client: TestClient,
+) -> None:
+    profile_id = seed_profile(job_client, "user-alice")
+    created = job_client.post(
+        "/api/jobs", headers=HEADERS, json=tts_payload(profile_id)
+    ).json()
+
+    async def complete_job() -> None:
+        async with job_client.app.state.session_factory() as session:
+            job = await JobService(session, RecordingQueue()).get_job(created["id"])
+            job.status = JobStatus.COMPLETED
+            job.progress = 100
+            job.estimated_remaining_seconds = 0
+            await session.commit()
+
+    asyncio.run(complete_job())
+    with job_client.stream(
+        "GET",
+        f"/api/jobs/{created['id']}/events",
+        headers={"X-User-ID": "user-alice", "Last-Event-ID": "41"},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "retry: 2000" in body
+    assert "id: 42" in body
+    assert "event: job" in body
+    data_line = next(line for line in body.splitlines() if line.startswith("data: "))
+    assert json.loads(data_line.removeprefix("data: "))["status"] == "COMPLETED"
+
+    hidden = job_client.get(
+        f"/api/jobs/{created['id']}/events",
+        headers={"X-User-ID": "user-bob"},
+    )
+    assert hidden.status_code == 404
+
+
+def test_job_event_stream_emits_heartbeat_and_changed_terminal_state(
+    job_client: TestClient,
+) -> None:
+    profile_id = seed_profile(job_client, "user-alice")
+    created = job_client.post(
+        "/api/jobs", headers=HEADERS, json=tts_payload(profile_id)
+    ).json()
+
+    def finish_later() -> None:
+        time.sleep(0.06)
+
+        async def cancel() -> None:
+            async with job_client.app.state.session_factory() as session:
+                job = await JobService(session, RecordingQueue()).get_job(created["id"])
+                job.status = JobStatus.CANCELLED
+                job.cancel_requested = True
+                await session.commit()
+
+        asyncio.run(cancel())
+
+    updater = threading.Thread(target=finish_later)
+    updater.start()
+    with job_client.stream(
+        "GET",
+        f"/api/jobs/{created['id']}/events",
+        headers={"X-User-ID": "user-alice"},
+    ) as response:
+        body = "".join(response.iter_text())
+    updater.join(timeout=1)
+
+    assert response.status_code == 200
+    assert ": heartbeat" in body
+    payloads = [
+        json.loads(line.removeprefix("data: "))
+        for line in body.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert [payload["status"] for payload in payloads] == ["QUEUED", "CANCELLED"]
 

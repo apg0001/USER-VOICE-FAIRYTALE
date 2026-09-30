@@ -1,18 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-type StudioMode = 'general_tts' | 'speech_voice_conversion' | 'singing_voice_conversion'
-
-type ModelInfo = {
-  key: string
-  display_name: string
-  version: string
-  is_mock: boolean
-  capabilities: StudioMode[]
-}
-
-type VoiceProfile = { id: string; name: string; status: string }
-type JobOutput = { id: string; download_url: string }
-type JobInfo = { id: string; status: string; progress: number; outputs: JobOutput[] }
+import { actorHeaders, cancelJob, fetchOutput, listJobs, retryJob } from './api'
+import { JobHistory } from './JobHistory'
+import { isTerminal, type JobInfo, type JobOutput, type ModelInfo, type StudioMode, type VoiceProfile } from './types'
+import { useJobMonitor } from './useJobMonitor'
 
 const modes: Array<{ id: StudioMode; eyebrow: string; title: string; description: string }> = [
   { id: 'general_tts', eyebrow: 'TEXT', title: 'Text → Voice', description: '문장과 긴 이야기를 내 목소리로' },
@@ -37,8 +28,15 @@ function App() {
   const [noiseReduction, setNoiseReduction] = useState('normal')
   const [selectedModelKey, setSelectedModelKey] = useState('')
   const [job, setJob] = useState<JobInfo | null>(null)
+  const [jobs, setJobs] = useState<JobInfo[]>([])
   const [jobError, setJobError] = useState('')
   const [jobStarting, setJobStarting] = useState(false)
+  const [playbackUrls, setPlaybackUrls] = useState<Record<string, string>>({})
+  const playbackUrlsRef = useRef(playbackUrls)
+
+  useEffect(() => {
+    playbackUrlsRef.current = playbackUrls
+  }, [playbackUrls])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -57,19 +55,22 @@ function App() {
       }),
       fetch('/api/voices', {
         signal: controller.signal,
-        headers: { 'X-User-ID': 'local-developer' },
+        headers: actorHeaders,
       }).then((response) => {
         if (!response.ok) throw new Error('Profiles unavailable')
         return response.json() as Promise<{ items: VoiceProfile[] }>
       }),
+      listJobs(controller.signal),
     ])
-      .then(([, modelPayload, consentPayload, profilePayload]) => {
+      .then(([, modelPayload, consentPayload, profilePayload, jobItems]) => {
         setModels(modelPayload.items)
         setSelectedModelKey(modelPayload.items[0]?.key ?? '')
         setConsentVersion(consentPayload.version)
         const readyProfiles = profilePayload.items.filter((profile) => profile.status === 'READY')
         setProfiles(readyProfiles)
         setSelectedProfileId(readyProfiles[0]?.id ?? '')
+        setJobs(jobItems)
+        setJob(jobItems.find((item) => !isTerminal(item)) ?? null)
         setApiStatus('ready')
       })
       .catch((error: unknown) => {
@@ -79,9 +80,26 @@ function App() {
     return () => controller.abort()
   }, [])
 
+  useEffect(() => () => {
+    Object.values(playbackUrlsRef.current).forEach((url) => URL.revokeObjectURL(url))
+  }, [])
+
   const isTextMode = mode === 'general_tts'
   const compatibleModels = models.filter((model) => model.capabilities.includes(mode))
   const selectedModel = compatibleModels.find((model) => model.key === selectedModelKey) ?? compatibleModels[0]
+
+  const applyJob = (updated: JobInfo) => {
+    setJob(updated)
+    setJobs((current) => {
+      const withoutUpdated = current.filter((item) => item.id !== updated.id)
+      return [updated, ...withoutUpdated]
+    })
+  }
+
+  const monitorTransport = useJobMonitor(
+    job && !isTerminal(job) ? job.id : null,
+    applyJob,
+  )
 
   const registerVoice = async () => {
     if (!voiceFile || !consentAccepted || !ownershipDeclared || !profileName.trim()) return
@@ -96,7 +114,7 @@ function App() {
     try {
       const response = await fetch('/api/voices', {
         method: 'POST',
-        headers: { 'X-User-ID': 'local-developer' },
+        headers: actorHeaders,
         body: form,
       })
       if (!response.ok) throw new Error('voice profile upload failed')
@@ -124,7 +142,7 @@ function App() {
         form.append('input_kind', mode === 'singing_voice_conversion' ? 'singing' : 'speech')
         const upload = await fetch('/api/files/inputs', {
           method: 'POST',
-          headers: { 'X-User-ID': 'local-developer' },
+          headers: actorHeaders,
           body: form,
         })
         if (!upload.ok) throw new Error('audio input upload failed')
@@ -138,8 +156,8 @@ function App() {
       const response = await fetch('/api/jobs', {
         method: 'POST',
         headers: {
+          ...actorHeaders,
           'Content-Type': 'application/json',
-          'X-User-ID': 'local-developer',
           'Idempotency-Key': crypto.randomUUID(),
         },
         body: JSON.stringify({
@@ -152,19 +170,7 @@ function App() {
         }),
       })
       if (!response.ok) throw new Error('job creation failed')
-      setJobStarting(false)
-      let current = await response.json() as JobInfo
-      setJob(current)
-      for (let attempt = 0; attempt < 150 && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(current.status); attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1000))
-        const polled = await fetch(`/api/jobs/${current.id}`, {
-          headers: { 'X-User-ID': 'local-developer' },
-        })
-        if (!polled.ok) throw new Error('job polling failed')
-        current = await polled.json() as JobInfo
-        setJob(current)
-      }
-      if (current.status !== 'COMPLETED') throw new Error('job did not complete')
+      applyJob(await response.json() as JobInfo)
     } catch {
       setJobError('작업을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.')
     } finally {
@@ -173,19 +179,49 @@ function App() {
   }
 
   const downloadOutput = async (output: JobOutput) => {
-    const response = await fetch(output.download_url, {
-      headers: { 'X-User-ID': 'local-developer' },
-    })
-    if (!response.ok) {
+    try {
+      const url = URL.createObjectURL(await fetchOutput(output.download_url))
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `voice-${output.id}.wav`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch {
       setJobError('결과 파일을 다운로드하지 못했습니다.')
-      return
     }
-    const url = URL.createObjectURL(await response.blob())
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `voice-${output.id}.wav`
-    anchor.click()
-    URL.revokeObjectURL(url)
+  }
+
+  const cancelActiveJob = async (target: JobInfo) => {
+    try {
+      const cancelled = await cancelJob(target.id)
+      setJobs((current) => [cancelled, ...current.filter((item) => item.id !== cancelled.id)])
+      setJob((current) => current?.id === cancelled.id ? cancelled : current)
+    } catch {
+      setJobError('작업을 취소하지 못했습니다.')
+    }
+  }
+
+  const retryFailedJob = async (target: JobInfo) => {
+    try {
+      setJobError('')
+      applyJob(await retryJob(target.id))
+    } catch {
+      setJobError('작업을 재시도하지 못했습니다.')
+    }
+  }
+
+  const preparePlayback = async (target: JobInfo) => {
+    const output = target.outputs[0]
+    if (!output) return
+    try {
+      const url = URL.createObjectURL(await fetchOutput(output.download_url))
+      setPlaybackUrls((current) => {
+        if (current[target.id]) URL.revokeObjectURL(current[target.id])
+        return { ...current, [target.id]: url }
+      })
+    } catch {
+      setJobError('결과 오디오를 불러오지 못했습니다.')
+    }
   }
 
   return (
@@ -231,7 +267,7 @@ function App() {
         <div className="section-heading"><span className="step-number">02</span><div><p className="label">WORK TYPE</p><h2>작업 유형</h2></div></div>
         <div className="mode-grid">
           {modes.map((item) => (
-            <button key={item.id} className={`mode-card ${mode === item.id ? 'selected' : ''}`} onClick={() => setMode(item.id)} type="button">
+            <button key={item.id} className={`mode-card ${mode === item.id ? 'selected' : ''}`} aria-pressed={mode === item.id} onClick={() => setMode(item.id)} type="button">
               <span className="mode-eyebrow">{item.eyebrow}</span>
               <strong>{item.title}</strong>
               <small>{item.description}</small>
@@ -259,12 +295,23 @@ function App() {
           <label><span><strong>Model</strong><small>작업에 맞는 어댑터</small></span><select value={selectedModel?.key ?? ''} onChange={(event) => setSelectedModelKey(event.target.value)} disabled={compatibleModels.length === 0}>{compatibleModels.length ? compatibleModels.map((item) => <option key={item.key} value={item.key}>{item.display_name} {item.is_mock ? '(Mock)' : ''}</option>) : <option value="">연결된 모델 없음</option>}</select></label>
         </div>
 
-        <button className="start-button" type="button" onClick={startJob} disabled={jobStarting || (isTextMode ? !text.trim() : !audioInput) || !selectedProfileId || !selectedModel || (job !== null && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status))}>
-          {jobStarting ? '입력 업로드 중…' : job && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status) ? `${job.status} · ${job.progress}%` : '작업 시작'} <span>→</span>
+        <button className="start-button" type="button" onClick={startJob} disabled={jobStarting || (isTextMode ? !text.trim() : !audioInput) || !selectedProfileId || !selectedModel || (job !== null && !isTerminal(job))}>
+          {jobStarting ? '입력 업로드 중…' : job && !isTerminal(job) ? `${job.status} · ${job.progress}%` : '작업 시작'} <span>→</span>
         </button>
         {job?.status === 'COMPLETED' && job.outputs[0] && <button className="download-button" type="button" onClick={() => downloadOutput(job.outputs[0])}>WAV 결과 다운로드</button>}
         {jobError && <p className="profile-error phase-note">{jobError}</p>}
+        {job && !isTerminal(job) && <p className="phase-note" aria-live="polite">진행 연결: {monitorTransport === 'polling' ? 'Polling fallback' : monitorTransport === 'offline' ? '연결 재시도 필요' : 'SSE 실시간'}</p>}
         <p className="phase-note">{isTextMode ? '500자를 초과하는 텍스트는 장문 TTS로 자동 분할해 처리합니다.' : mode === 'singing_voice_conversion' ? '노래는 스테레오 44.1 kHz로 정규화한 뒤 보컬 분리·변환·재합성을 수행합니다.' : '말하기 입력은 타이밍을 유지한 채 등록 음색으로 변환합니다.'}</p>
+
+        <div className="divider" />
+        <JobHistory
+          jobs={jobs}
+          playbackUrls={playbackUrls}
+          onCancel={cancelActiveJob}
+          onRetry={retryFailedJob}
+          onPreparePlayback={preparePlayback}
+          onDownload={(target) => target.outputs[0] && downloadOutput(target.outputs[0])}
+        />
       </section>
 
       <footer><span>VOICE FAIRY TALE</span><span>Responsible voice, thoughtfully made.</span></footer>
