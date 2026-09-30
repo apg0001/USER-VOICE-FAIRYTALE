@@ -97,3 +97,36 @@ async def test_real_ffmpeg_normalizes_to_model_wav(tmp_path: Path) -> None:
     assert probe.channels == 1
     assert probe.codec_name == "pcm_s16le"
 
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg binaries are not installed",
+)
+async def test_real_ffmpeg_preserves_stereo_for_singing(tmp_path: Path) -> None:
+    source = tmp_path / "music.wav"
+    with wave.open(str(source), "wb") as wav:
+        wav.setnchannels(2)
+        wav.setsampwidth(2)
+        wav.setframerate(44_100)
+        wav.writeframes(b"\x01\x00\x02\x00" * 44_100)
+    destination = tmp_path / "singing.wav"
+    tool = FFmpegMediaTool(timeout_seconds=30)
+
+    await tool.transcode(
+        source,
+        destination,
+        PreprocessingConfig(
+            target_sample_rate=44_100,
+            target_channels=2,
+            trim_silence=False,
+            normalize_loudness=False,
+            noise_reduction=NoiseReduction.OFF,
+        ),
+    )
+    probe = await tool.probe(destination)
+
+    assert probe.sample_rate == 44_100
+    assert probe.channels == 2
+    assert probe.codec_name == "pcm_s16le"
+
