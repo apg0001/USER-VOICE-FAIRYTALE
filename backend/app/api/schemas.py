@@ -10,6 +10,11 @@ class HealthResponse(BaseModel):
     environment: str
 
 
+class ReadinessResponse(BaseModel):
+    status: str
+    checks: dict[str, str]
+
+
 class ModelResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
