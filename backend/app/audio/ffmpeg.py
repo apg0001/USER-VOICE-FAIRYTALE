@@ -150,7 +150,7 @@ class FFmpegMediaTool(MediaTool):
             str(source),
             "-vn",
             "-ac",
-            "1",
+            str(config.target_channels),
             "-ar",
             str(config.target_sample_rate),
         ]

@@ -39,6 +39,7 @@ class AudioQuality:
 @dataclass(frozen=True, slots=True)
 class PreprocessingConfig:
     target_sample_rate: int = 24_000
+    target_channels: int = 1
     trim_silence: bool = True
     normalize_loudness: bool = True
     noise_reduction: NoiseReduction = NoiseReduction.NORMAL

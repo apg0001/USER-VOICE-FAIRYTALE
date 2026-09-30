@@ -7,6 +7,7 @@ type ModelInfo = {
   display_name: string
   version: string
   is_mock: boolean
+  capabilities: StudioMode[]
 }
 
 type VoiceProfile = { id: string; name: string; status: string }
@@ -32,8 +33,12 @@ function App() {
   const [profiles, setProfiles] = useState<VoiceProfile[]>([])
   const [selectedProfileId, setSelectedProfileId] = useState('')
   const [text, setText] = useState('')
+  const [audioInput, setAudioInput] = useState<File | null>(null)
+  const [noiseReduction, setNoiseReduction] = useState('normal')
+  const [selectedModelKey, setSelectedModelKey] = useState('')
   const [job, setJob] = useState<JobInfo | null>(null)
   const [jobError, setJobError] = useState('')
+  const [jobStarting, setJobStarting] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -60,6 +65,7 @@ function App() {
     ])
       .then(([, modelPayload, consentPayload, profilePayload]) => {
         setModels(modelPayload.items)
+        setSelectedModelKey(modelPayload.items[0]?.key ?? '')
         setConsentVersion(consentPayload.version)
         const readyProfiles = profilePayload.items.filter((profile) => profile.status === 'READY')
         setProfiles(readyProfiles)
@@ -74,6 +80,8 @@ function App() {
   }, [])
 
   const isTextMode = mode === 'general_tts'
+  const compatibleModels = models.filter((model) => model.capabilities.includes(mode))
+  const selectedModel = compatibleModels.find((model) => model.key === selectedModelKey) ?? compatibleModels[0]
 
   const registerVoice = async () => {
     if (!voiceFile || !consentAccepted || !ownershipDeclared || !profileName.trim()) return
@@ -101,11 +109,32 @@ function App() {
     }
   }
 
-  const startTts = async () => {
-    if (!text.trim() || !selectedProfileId || models.length === 0) return
+  const startJob = async () => {
+    if (!selectedProfileId || !selectedModel || (isTextMode ? !text.trim() : !audioInput)) return
     setJobError('')
     setJob(null)
+    setJobStarting(true)
     try {
+      let inputStorageKey: string | undefined
+      let inputDuration: number | undefined
+      if (!isTextMode && audioInput) {
+        const form = new FormData()
+        form.append('audio_file', audioInput)
+        form.append('noise_reduction', noiseReduction)
+        form.append('input_kind', mode === 'singing_voice_conversion' ? 'singing' : 'speech')
+        const upload = await fetch('/api/files/inputs', {
+          method: 'POST',
+          headers: { 'X-User-ID': 'local-developer' },
+          body: form,
+        })
+        if (!upload.ok) throw new Error('audio input upload failed')
+        const uploaded = await upload.json() as {
+          input_storage_key: string
+          duration_seconds: number
+        }
+        inputStorageKey = uploaded.input_storage_key
+        inputDuration = uploaded.duration_seconds
+      }
       const response = await fetch('/api/jobs', {
         method: 'POST',
         headers: {
@@ -114,14 +143,16 @@ function App() {
           'Idempotency-Key': crypto.randomUUID(),
         },
         body: JSON.stringify({
-          mode: text.length > 500 ? 'long_form_tts' : 'general_tts',
-          model_key: models[0].key,
+          mode: isTextMode ? (text.length > 500 ? 'long_form_tts' : 'general_tts') : mode,
+          model_key: selectedModel.key,
           voice_profile_id: selectedProfileId,
-          input_text: text.trim(),
-          request_config: {},
+          input_text: isTextMode ? text.trim() : undefined,
+          input_storage_key: inputStorageKey,
+          request_config: inputDuration ? { input_duration: inputDuration } : {},
         }),
       })
       if (!response.ok) throw new Error('job creation failed')
+      setJobStarting(false)
       let current = await response.json() as JobInfo
       setJob(current)
       for (let attempt = 0; attempt < 150 && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(current.status); attempt += 1) {
@@ -136,6 +167,8 @@ function App() {
       if (current.status !== 'COMPLETED') throw new Error('job did not complete')
     } catch {
       setJobError('작업을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setJobStarting(false)
     }
   }
 
@@ -213,21 +246,25 @@ function App() {
         {isTextMode ? (
           <textarea aria-label="변환할 텍스트" placeholder="목소리로 들려줄 이야기를 입력하세요…" maxLength={200000} value={text} onChange={(event) => setText(event.target.value)} />
         ) : (
-          <button className="dropzone" type="button" disabled><strong>오디오 파일을 선택하세요</strong><small>WAV, MP3, M4A, FLAC · 최대 500 MB</small></button>
+          <label className="dropzone">
+            <strong>{audioInput ? audioInput.name : '오디오 파일을 선택하세요'}</strong>
+            <small>WAV, MP3, M4A, FLAC · 최대 500 MB</small>
+            <input className="visually-hidden" type="file" accept=".wav,.mp3,.m4a,.flac,audio/*" onChange={(event) => setAudioInput(event.target.files?.[0] ?? null)} />
+          </label>
         )}
 
         <div className="options">
           <label><span><strong>Voice Profile</strong><small>사용할 등록 음성</small></span><select value={selectedProfileId} onChange={(event) => setSelectedProfileId(event.target.value)} disabled={profiles.length === 0}>{profiles.length ? profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>) : <option value="">등록된 음성 없음</option>}</select></label>
-          <label><span><strong>Noise reduction</strong><small>배경 소음을 부드럽게 줄입니다</small></span><select defaultValue="normal"><option value="off">Off</option><option value="normal">Normal</option><option value="strong">Strong</option></select></label>
-          <label><span><strong>Model</strong><small>작업에 맞는 어댑터</small></span><select disabled={models.length === 0}>{models.length ? models.map((item) => <option key={item.key}>{item.display_name} {item.is_mock ? '(Mock)' : ''}</option>) : <option>연결된 모델 없음</option>}</select></label>
+          <label><span><strong>Noise reduction</strong><small>배경 소음을 부드럽게 줄입니다</small></span><select value={noiseReduction} onChange={(event) => setNoiseReduction(event.target.value)}><option value="off">Off</option><option value="normal">Normal</option><option value="strong">Strong</option></select></label>
+          <label><span><strong>Model</strong><small>작업에 맞는 어댑터</small></span><select value={selectedModel?.key ?? ''} onChange={(event) => setSelectedModelKey(event.target.value)} disabled={compatibleModels.length === 0}>{compatibleModels.length ? compatibleModels.map((item) => <option key={item.key} value={item.key}>{item.display_name} {item.is_mock ? '(Mock)' : ''}</option>) : <option value="">연결된 모델 없음</option>}</select></label>
         </div>
 
-        <button className="start-button" type="button" onClick={startTts} disabled={!isTextMode || !text.trim() || !selectedProfileId || !models.length || (job !== null && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status))}>
-          {job && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status) ? `${job.status} · ${job.progress}%` : '작업 시작'} <span>→</span>
+        <button className="start-button" type="button" onClick={startJob} disabled={jobStarting || (isTextMode ? !text.trim() : !audioInput) || !selectedProfileId || !selectedModel || (job !== null && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status))}>
+          {jobStarting ? '입력 업로드 중…' : job && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status) ? `${job.status} · ${job.progress}%` : '작업 시작'} <span>→</span>
         </button>
         {job?.status === 'COMPLETED' && job.outputs[0] && <button className="download-button" type="button" onClick={() => downloadOutput(job.outputs[0])}>WAV 결과 다운로드</button>}
         {jobError && <p className="profile-error phase-note">{jobError}</p>}
-        <p className="phase-note">500자를 초과하는 텍스트는 장문 TTS로 자동 분할해 처리합니다.</p>
+        <p className="phase-note">{isTextMode ? '500자를 초과하는 텍스트는 장문 TTS로 자동 분할해 처리합니다.' : mode === 'singing_voice_conversion' ? '노래는 스테레오 44.1 kHz로 정규화한 뒤 보컬 분리·변환·재합성을 수행합니다.' : '말하기 입력은 타이밍을 유지한 채 등록 음색으로 변환합니다.'}</p>
       </section>
 
       <footer><span>VOICE FAIRY TALE</span><span>Responsible voice, thoughtfully made.</span></footer>

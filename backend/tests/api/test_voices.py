@@ -22,6 +22,7 @@ class StubFileService:
         self.storage = LocalObjectStorage(root)
         self.speech_seconds = speech_seconds
         self.ingest_count = 0
+        self.last_config: PreprocessingConfig | None = None
 
     async def ingest_audio(
         self,
@@ -33,6 +34,7 @@ class StubFileService:
         config: PreprocessingConfig,
     ) -> AudioArtifact:
         self.ingest_count += 1
+        self.last_config = config
         original_key = await self.storage.put(
             source, namespace=f"{namespace}/original", suffix="wav"
         )
@@ -210,4 +212,28 @@ def test_speech_input_is_scoped_to_uploader(
 
     assert accepted.status_code == 202
     assert stolen.status_code == 422
+
+
+def test_singing_input_preserves_music_sample_rate_and_channels(
+    voice_app: tuple[TestClient, StubFileService],
+) -> None:
+    client, file_service = voice_app
+
+    uploaded = client.post(
+        "/api/files/inputs",
+        headers={"X-User-ID": "singer"},
+        data={"input_kind": "singing", "noise_reduction": "off"},
+        files={"audio_file": ("song.wav", b"RIFF0000WAVEaudio", "audio/wav")},
+    )
+
+    assert uploaded.status_code == 201
+    assert uploaded.json()["sample_rate"] == 44_100
+    assert uploaded.json()["channels"] == 2
+    assert file_service.last_config == PreprocessingConfig(
+        target_sample_rate=44_100,
+        target_channels=2,
+        trim_silence=False,
+        normalize_loudness=False,
+        noise_reduction="off",
+    )
 

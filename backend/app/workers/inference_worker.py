@@ -10,12 +10,14 @@ from app.db.models import JobMode, JobOutput, JobStatus, VoiceProfile
 from app.db.session import create_session_factory
 from app.models import build_model_registry
 from app.models.base import VoiceModel
+from app.models.separation import SeparationModel, build_separation_registry
+from app.models.singing import SingingVoiceModel, build_singing_registry
 from app.models.tts import TTSModel, build_tts_model_registry
 from app.models.voice_conversion import (
     VoiceConversionModel,
     build_voice_conversion_registry,
 )
-from app.pipelines import TTSPipeline, VoiceConversionPipeline
+from app.pipelines import SingingPipeline, TTSPipeline, VoiceConversionPipeline
 from app.queue import CeleryJobQueue
 from app.services.job_service import InvalidJobTransitionError, JobService
 from app.storage import LocalObjectStorage
@@ -24,12 +26,17 @@ from app.workers.celery_app import celery_app
 log = structlog.get_logger(__name__)
 
 
+class JobExecutionCancelled(Exception):
+    pass
+
+
 async def execute_job(job_id: str) -> dict[str, str]:
     """Execute one persisted Job; every durable state change is committed to the DB."""
 
     settings = get_settings()
     engine, session_factory = create_session_factory(settings.database_url)
     model: Any | None = None
+    loaded_models: list[Any] = []
     generated_storage_key: str | None = None
     output_storage = LocalObjectStorage(settings.storage_path)
     started = time.monotonic()
@@ -47,6 +54,8 @@ async def execute_job(job_id: str) -> dict[str, str]:
             await service.transition(job_id, JobStatus.LOADING_MODEL, progress=30)
             is_tts = job.mode in {JobMode.GENERAL_TTS, JobMode.LONG_FORM_TTS}
             is_speech_vc = job.mode == JobMode.SPEECH_VOICE_CONVERSION
+            is_singing_vc = job.mode == JobMode.SINGING_VOICE_CONVERSION
+            separator: SeparationModel | None = None
             if is_tts:
                 tts_registry = build_tts_model_registry(
                     include_mock=settings.use_mock_inference
@@ -57,10 +66,21 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     include_mock=settings.use_mock_inference
                 )
                 model = conversion_registry.create(job.model_key)
+            elif is_singing_vc:
+                separator = build_separation_registry(
+                    include_mock=settings.use_mock_inference
+                ).create("mock-separator-v1")
+                model = build_singing_registry(
+                    include_mock=settings.use_mock_inference
+                ).create(job.model_key)
             else:
                 registry = build_model_registry(include_mock=settings.use_mock_inference)
                 model = registry.create(job.model_key)
             load_started = time.monotonic()
+            if separator is not None:
+                loaded_models.append(separator)
+                separator.load()
+            loaded_models.append(model)
             model.load()
             load_time = time.monotonic() - load_started
 
@@ -83,6 +103,8 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 ).get(job.model_key, {})
 
                 async def checkpoint(completed: int, total: int) -> None:
+                    if await service.is_cancelled(job_id):
+                        raise JobExecutionCancelled
                     tracked = await service.get_job(job_id, for_update=True)
                     tracked.progress = 40 + round(40 * completed / total)
                     tracked.metrics = {
@@ -131,6 +153,8 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 )
 
                 async def conversion_checkpoint(completed: int, total: int) -> None:
+                    if await service.is_cancelled(job_id):
+                        raise JobExecutionCancelled
                     tracked = await service.get_job(job_id, for_update=True)
                     tracked.progress = 40 + round(40 * completed / total)
                     tracked.metrics = {
@@ -174,6 +198,84 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     "sample_rate": conversion.sample_rate,
                     "preserved": ["duration", "sample_rate", "timing"],
                 }
+            elif is_singing_vc:
+                if not job.voice_profile_id or not job.input_storage_key:
+                    raise ValueError("singing conversion input and voice profile required")
+                if separator is None:
+                    raise RuntimeError("singing separator is not initialized")
+                profile = await session.scalar(
+                    select(VoiceProfile).where(VoiceProfile.id == job.voice_profile_id)
+                )
+                if profile is None or profile.status != "READY":
+                    raise ValueError("ready voice profile required")
+                profile_data = profile.profile_metadata.get("model_profiles", {}).get(
+                    job.model_key, {}
+                )
+
+                async def singing_checkpoint(completed: int, total: int) -> None:
+                    if await service.is_cancelled(job_id):
+                        raise JobExecutionCancelled
+                    tracked = await service.get_job(job_id, for_update=True)
+                    tracked.progress = 40 + round(40 * completed / total)
+                    tracked.metrics = {
+                        **tracked.metrics,
+                        "singing_checkpoint": {
+                            "completed": completed,
+                            "total": total,
+                        },
+                    }
+                    await session.commit()
+
+                singing = await SingingPipeline(
+                    output_storage,
+                    max_duration_seconds=settings.max_audio_duration_seconds,
+                ).run(
+                    job_id=job.id,
+                    input_storage_key=job.input_storage_key,
+                    separator=separator,
+                    singing_model=cast(SingingVoiceModel, model),
+                    voice_profile=profile_data,
+                    on_checkpoint=singing_checkpoint,
+                )
+                preserved = [
+                    "duration",
+                    "sample_rate",
+                    "channels",
+                    "frame_count",
+                    "timing",
+                    "pitch",
+                    "melody",
+                ]
+                session.add(
+                    JobOutput(
+                        job_id=job.id,
+                        storage_key=singing.storage_key,
+                        content_type="audio/wav",
+                        duration_seconds=singing.duration_seconds,
+                        output_metadata={
+                            "sample_rate": singing.sample_rate,
+                            "channels": singing.channels,
+                            "chunk_count": singing.chunk_count,
+                            "model": job.model_key,
+                            "separator": separator.descriptor.key,
+                            "preserved": preserved,
+                            "manifest": singing.manifest,
+                        },
+                    )
+                )
+                generated_storage_key = singing.storage_key
+                output_metadata = {
+                    "input_duration": singing.duration_seconds,
+                    "output_duration": singing.duration_seconds,
+                    "chunk_count": singing.chunk_count,
+                    "sample_rate": singing.sample_rate,
+                    "channels": singing.channels,
+                    "separator": separator.descriptor.key,
+                    "preserved": preserved,
+                    "intermediates_cleaned": singing.manifest["mixing"][
+                        "intermediates_cleaned"
+                    ],
+                }
             else:
                 voice_model = cast(VoiceModel, model)
                 model_input = voice_model.preprocess(job.input_text or job.input_storage_key)
@@ -186,7 +288,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 return {"job_id": job_id, "status": JobStatus.CANCELLED.value}
             await service.transition(job_id, JobStatus.POSTPROCESSING, progress=85)
             post_started = time.monotonic()
-            if not is_tts and not is_speech_vc:
+            if not is_tts and not is_speech_vc and not is_singing_vc:
                 cast(VoiceModel, model).postprocess(output)
             postprocess_time = time.monotonic() - post_started
 
@@ -212,10 +314,23 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     if is_speech_vc
                     else {}
                 ),
+                **(
+                    {
+                        "singing_checkpoint": tracked_job.metrics.get(
+                            "singing_checkpoint"
+                        )
+                    }
+                    if is_singing_vc
+                    else {}
+                ),
                 **output_metadata,
             }
             await service.transition(job_id, JobStatus.COMPLETED, progress=100)
             return {"job_id": job_id, "status": JobStatus.COMPLETED.value}
+    except JobExecutionCancelled:
+        if generated_storage_key is not None:
+            await output_storage.delete(generated_storage_key)
+        return {"job_id": job_id, "status": JobStatus.CANCELLED.value}
     except InvalidJobTransitionError as error:
         if generated_storage_key is not None:
             await output_storage.delete(generated_storage_key)
@@ -246,9 +361,9 @@ async def execute_job(job_id: str) -> dict[str, str]:
             log.exception("worker_failure_persistence_failed", job_id=job_id)
         return {"job_id": job_id, "status": JobStatus.FAILED.value}
     finally:
-        if model is not None:
+        for loaded_model in reversed(loaded_models):
             try:
-                model.unload()
+                loaded_model.unload()
             except Exception:
                 log.exception("model_unload_failed", job_id=job_id)
         await engine.dispose()

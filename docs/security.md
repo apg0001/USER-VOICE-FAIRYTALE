@@ -21,6 +21,7 @@ Voice Fairy Tale은 음성과 파생 speaker embedding을 민감한 사용자 �
 
 - 원본, 정제본, embedding, 중간 파일, 결과 파일을 구분하여 추적한다.
 - 임시 파일은 Job 종료 후 즉시, 디버그 보관본은 설정된 기간 후 삭제한다.
+- Singing Pipeline의 vocal/instrumental/converted vocal은 임시 메모리에서만 처리하고 최종 WAV만 publish한다. stem hash와 `retained=false` 표시는 결과 manifest에 남긴다.
 - Voice Profile 삭제 시 먼저 `DELETION_PENDING`을 기록하고 원본·정제본·샘플 metadata·프로필을 연쇄 삭제한다. 저장소 삭제 실패 시 metadata를 남겨 재시도한다.
 - 로그에는 토큰, 비밀번호, 원본 텍스트 전문, 음성 바이트, 로컬 절대 경로를 남기지 않는다.
 

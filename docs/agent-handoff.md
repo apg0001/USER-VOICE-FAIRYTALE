@@ -6,13 +6,13 @@
 
 - 저장소: <https://github.com/apg0001/USER-VOICE-FAIRYTALE>
 - 기준 브랜치: `develop`
-- 이 문서 작성 직전 기준 commit: `41ec8d5`
-- 완료된 Phase: 1–6
-- 다음 제품 Phase: [#7 Singing Voice Conversion과 반주 재합성](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/7)
+- Phase 7 직전 `develop` commit: `5cdcc38`; 정확한 최신 commit은 `git rev-parse HEAD`로 확인
+- 완료된 Phase: 1–7
+- 다음 제품 Phase: [#8 GPU Model Manager와 OOM 복구](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/8)
 - 별도 모델 검증: [#11 실제 한국어 TTS 모델 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
 - 현재 inference는 모두 계약 검증용 Mock이다. 실제 사람의 음색을 생성한다고 주장하면 안 된다.
-- 로컬 기준 검증: Ruff/mypy 통과, pytest 28 passed·1 skipped, coverage 79%, frontend lint/build 통과
-- 최근 `develop` CI: <https://github.com/apg0001/USER-VOICE-FAIRYTALE/actions/runs/36679585355>
+- Phase 7 로컬 기준 검증: Ruff/mypy 통과, pytest 35 passed·2 skipped, coverage 81%, frontend lint/build 통과
+- 최근 `develop` CI는 `gh run list --branch develop --limit 3`으로 확인
 
 작업 시작 직후 다음을 다시 확인한다. 이 문서의 숫자보다 Git과 GitHub 상태가 우선한다.
 
@@ -44,19 +44,19 @@ FastAPI는 요청·소유권·metadata를 담당하고, 무거운 inference는 C
 
 - 동의 기반 Voice Profile 등록·조회·삭제
 - WAV/MP3/M4A/FLAC magic/MIME/확장자 검증
-- ffprobe/ffmpeg 기반 mono PCM WAV 변환, trim/normalize/denoise 선택
+- ffprobe/ffmpeg 기반 speech mono 24 kHz / singing stereo 44.1 kHz PCM WAV 변환, trim/normalize/denoise 선택
 - Job 멱등 생성, 상태 전이, 진행률, Queue 위치, 취소, 재시도
 - 일반/장문 TTS chunking과 Mock WAV 생성
 - 사용자 namespace 기반 Speech VC 입력 업로드
 - Speech VC chunking, 길이·frame 수·sample rate 보존 계약
+- 독립적인 Separation/Singing adapter와 10초 chunk 기반 Singing VC
+- 원본 보컬 RMS 정렬, -1 dBFS limiter, 반주 재합성, stem hash manifest
 - Job 결과 metadata와 소유자 전용 다운로드
-- Studio의 Voice Profile 등록 및 TTS 생성/polling/download
+- Studio의 Voice Profile 등록, TTS/Speech/Singing 입력·생성·polling/download
 
 아직 구현되지 않은 실제 동작:
 
 - 실제 TTS/VC/SVC/분리 모델과 GPU dependency
-- Singing VC UI 및 Speech VC UI 업로드 연결
-- source separation, vocal conversion, loudness alignment, mixing
 - ModelManager, VRAM admission, CUDA OOM 복구
 - SSE, 작업 이력·플레이어·완전한 취소/재시도 UX
 - 인증 공급자, 저장 암호화, 감사 로그, rate limit, watermark/abuse 대응
@@ -105,15 +105,19 @@ backend/app/
 ├─ audio/
 │  ├─ validation.py         # magic/MIME/확장자 검증
 │  ├─ ffmpeg.py             # shell-free ffprobe/ffmpeg와 품질 분석
+│  ├─ mixing.py             # RMS 정렬, 반주 mixing, peak limiter
 │  └─ preprocessing/        # 전처리 orchestration
 ├─ db/models.py             # User, VoiceProfile, VoiceSample, Job, JobOutput
 ├─ models/
 │  ├─ base.py               # 공통 VoiceModel/descriptor/capability
 │  ├─ tts/                  # TTSModel, Mock, registry
-│  └─ voice_conversion/     # VoiceConversionModel, Mock, registry
+│  ├─ voice_conversion/     # VoiceConversionModel, Mock, registry
+│  ├─ separation/           # SeparationModel, Mock, registry
+│  └─ singing/              # SingingVoiceModel, Mock, registry
 ├─ pipelines/
 │  ├─ tts.py                # text chunk → synthesize → WAV 저장
-│  └─ voice_conversion.py   # PCM chunk → convert → 보존 검증 → WAV
+│  ├─ voice_conversion.py   # PCM chunk → convert → 보존 검증 → WAV
+│  └─ singing.py            # separation → SVC → mixing → manifest
 ├─ profiles/                # 모델별 Voice Profile builder
 ├─ queue/                   # JobQueue 계약과 Celery adapter
 ├─ services/
@@ -126,7 +130,7 @@ backend/app/
                               # 현재 mode dispatch와 durable transition
 ```
 
-`inference_worker.py`가 Phase 5–6 분기로 커졌다. Phase 7을 그대로 추가하기 전에 mode별 executor/dispatcher로 분리할지 검토하되, 의미 없는 추상화는 피하고 기존 상태 전이·정리 규칙을 보존한다.
+`inference_worker.py`가 Phase 5–7 mode 분기로 커졌다. Phase 8 ModelManager를 연결할 때 mode executor/dispatcher 분리를 검토하되 기존 상태 전이·결과 정리 규칙을 보존한다.
 
 Frontend의 단일 주요 화면은 `frontend/src/App.tsx`다. Phase 9 전까지 과도한 상태관리 library를 추가하지 않는다.
 
@@ -145,7 +149,7 @@ QUEUED → PREPROCESSING → LOADING_MODEL → INFERENCE → POSTPROCESSING → 
    └──────────────── 각 단계에서 FAILED 또는 CANCELLED ────────────────┘
 ```
 
-TTS/VC Job에는 요청자 소유의 `READY` Voice Profile이 필요하다. Speech/Singing 입력 key는 `users/{internal_user_id}/inputs/` prefix를 만족해야 한다. 결과 다운로드는 `job_outputs → jobs → users` join으로 소유권을 검증한다.
+모든 음성 Job에는 요청자 소유의 `READY` Voice Profile이 필요하다. Speech/Singing 입력 key는 `users/{internal_user_id}/inputs/` prefix를 만족해야 한다. 결과 다운로드는 `job_outputs → jobs → users` join으로 소유권을 검증한다.
 
 주의: 입력 업로드는 원본과 정제본을 저장하지만 별도 upload table이 없다. 정제 key만 클라이언트에 반환되고 보존기간 정리는 아직 없다. Phase 10에서 추적 metadata와 cleanup을 완성해야 한다.
 
@@ -224,58 +228,57 @@ docker compose up
 ```powershell
 git switch develop
 git pull --ff-only origin develop
-git switch -c "feat/#7-singing-voice-conversion"
+git switch -c "feat/#8-model-manager"
 ```
 
 구현 후 논리 단위로 커밋한다.
 
 ```text
-[feat] Source Separation adapter 계약 구현
-[feat] Singing Voice Conversion과 Mixing Pipeline 연결
-[test] 보컬 분리와 재합성 Pipeline 계약 검증
-[docs] Singing Voice 처리와 중간 산출물 수명주기 문서화
+[feat] GPU 진단과 Model Manager 구현
+[test] Model lifecycle과 OOM 복구 계약 검증
+[docs] GPU 운영 경계와 장애 복구 문서화
 ```
 
 그 다음:
 
 ```powershell
-git push -u origin "feat/#7-singing-voice-conversion"
-gh run list --branch "feat/#7-singing-voice-conversion" --limit 3
+git push -u origin "feat/#8-model-manager"
+gh run list --branch "feat/#8-model-manager" --limit 3
 gh run watch RUN_ID --exit-status
 git switch develop
 git pull --ff-only origin develop
-git merge --no-ff "feat/#7-singing-voice-conversion" -m "[feat] Singing Voice Pipeline을 develop에 병합"
+git merge --no-ff "feat/#8-model-manager" -m "[feat] GPU Model Manager를 develop에 병합"
 git push origin develop
 ```
 
 `develop` CI가 성공한 뒤에만 상세 검증 댓글과 함께 Issue를 닫는다. `main`에는 직접 병합하지 않는다.
 
-## 11. 다음 작업: Phase 7 권장 구현 순서
+## 11. 다음 작업: Phase 8 권장 구현 순서
 
-Issue: [#7](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/7)  
-Branch: `feat/#7-singing-voice-conversion`
+Issue: [#8](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/8)
+Branch: `feat/#8-model-manager`
 
 권장 순서:
 
-1. `SeparationModel`과 `SingingVoiceModel` Protocol/descriptor/registry를 정의한다.
-2. CPU CI용 Mock separator를 만든다. 입력 WAV frame을 보존하면서 vocal/instrumental 두 stem을 추적 가능한 형태로 만든다.
-3. Mock Singing adapter는 vocal의 frame count, sample rate, timing/pitch metadata 계약을 보존한다.
-4. `audio/separation`, `audio/mixing` 또는 책임이 명확한 pipeline 모듈을 추가한다.
-5. Pipeline을 `input → separation → vocal SVC → loudness alignment → mix → validation → output`으로 구성한다.
-6. original, vocal, instrumental, converted vocal, final output의 metadata/storage key를 manifest로 추적한다.
-7. 성공 시 최종 결과만 `job_outputs`로 publish하고 중간 산출물은 정책에 따라 정리한다.
-8. 실패·취소 시 해당 Job이 만든 중간 객체만 제거한다.
-9. `inference_worker.py`의 추가 분기가 과도해지지 않도록 mode executor 분리를 검토한다.
-10. unit adapter test, pipeline integration test, API 소유권 test를 작성한다.
-11. UI는 Singing 입력 업로드, separation auto option, progress/download를 연결하되 Phase 9 UX와 중복 구현하지 않는다.
+1. Issue 본문과 `docs/architecture.md`의 GPU/Model lifecycle 계약을 다시 확인한다.
+2. `(model key, version, device)` 단위 cache entry와 adapter factory를 관리하는 `ModelManager`를 만든다.
+3. 동일 모델의 중복 load를 막는 per-entry lock과 Worker concurrency 1 전제를 명시한다.
+4. CUDA/PyTorch가 없어도 import와 CPU Mock 테스트가 가능한 진단 port를 둔다.
+5. lazy load 전에 VRAM admission을 수행하고, 부족하면 참조되지 않는 LRU entry를 unload한다.
+6. Job 실행 동안 lease/reference를 유지해 사용 중 모델이 eviction되지 않게 한다.
+7. CUDA OOM은 현재 Job만 실패시키고 adapter 참조 해제, GC, CUDA cache 정리 후 Worker health를 재검증한다.
+8. TTS/VC/Singing의 직접 `load/unload`를 Manager lease로 교체한다. Singing은 separator와 SVC 두 lease가 필요하다.
+9. model load time, cache hit/miss, eviction, device/VRAM metadata를 민감정보 없이 Job metric/log에 남긴다.
+10. CPU fake device/model로 cache, lock, eviction, load 실패, OOM 격리 test를 작성한다.
+11. 실제 GPU smoke test는 일반 CI와 분리하고 실행 조건과 증거를 문서화한다.
 
-Phase 7 완료 조건:
+Phase 8 완료 조건:
 
-- vocal/instrumental/final metadata가 추적 가능하다.
-- output frame 수, sample rate, duration 허용 오차가 검증된다.
-- mixing 시 clipping 방지와 loudness 정책이 테스트된다.
-- 실패한 한 Job이 다른 Job/storage를 손상시키지 않는다.
-- 실제 separation/SVC 품질을 Mock 결과로 오인시키지 않는다.
+- 같은 모델의 동시 요청이 중복 load되지 않는다.
+- 사용 중 모델은 eviction되지 않고 LRU 제한이 지켜진다.
+- OOM 후 다음 Mock Job을 처리할 수 있으며 Worker 전체가 종료되지 않는다.
+- API image에 PyTorch/CUDA dependency가 추가되지 않는다.
+- GPU가 없는 CI에서 전체 계약을 재현할 수 있다.
 
 ## 12. 이후 작업 순서
 
@@ -320,9 +323,9 @@ Phase 8의 ModelManager/Worker image 경계가 준비된 뒤 진행하는 편이
 
 ## 13. 알려진 기술 부채와 함정
 
-- Mock TTS는 tone WAV, Mock VC는 gain 변환이다. 품질 검증용 모델이 아니다.
-- `inference_worker.py`의 mode dispatch가 커지고 있어 Phase 7에서 책임 분리를 검토한다.
-- TTS/VC checkpoint는 진행 metadata를 영속화하지만 chunk 오디오 재개 manifest까지 구현하지 않았다.
+- Mock TTS는 tone WAV, Mock VC/SVC는 gain 변환, Mock separation은 sample 비율 분할이다. 품질 검증용 모델이 아니다.
+- `inference_worker.py`의 mode dispatch가 커지고 있어 Phase 8 Manager 연결 시 executor 분리를 검토한다.
+- TTS/VC/Singing checkpoint는 진행 metadata를 영속화하지만 chunk 오디오 재개 manifest까지 구현하지 않았다.
 - 입력 업로드의 원본·정제본 보존기간과 DB 추적은 Phase 10 과제다.
 - Voice Profile 삭제 후 과거 Job의 `voice_profile_id`는 `SET NULL`이므로 결과 provenance 보존 정책을 재검토해야 한다.
 - File upload copy logic이 voice/files route에 일부 중복된다. 공통 upload staging service 후보지만 작은 함수 하나를 위해 과도하게 추상화하지 않는다.
@@ -343,6 +346,7 @@ Phase 8의 ModelManager/Worker image 경계가 준비된 뒤 진행하는 편이
    - [Voice Profile](voice-profiles.md)
    - [TTS Pipeline](tts-pipeline.md)
    - [Speech Voice Conversion](speech-voice-conversion.md)
+   - [Singing Voice Conversion](singing-voice-conversion.md)
 5. [보안 원칙](security.md)
 
 문서와 코드가 다르면 코드를 확인하고 같은 작업에서 문서를 바로 고친다.
