@@ -22,6 +22,14 @@ services:
       STORAGE_PATH: /data/storage
       MODEL_PATH: /data/models
       USE_MOCK_INFERENCE: ${USE_MOCK_INFERENCE:-true}
+      INPUT_RETENTION_HOURS: ${INPUT_RETENTION_HOURS:-24}
+      OUTPUT_RETENTION_HOURS: ${OUTPUT_RETENTION_HOURS:-168}
+      CLEANUP_BATCH_SIZE: ${CLEANUP_BATCH_SIZE:-100}
+      ORPHAN_GRACE_HOURS: ${ORPHAN_GRACE_HOURS:-2}
+      AUTH_MODE: ${AUTH_MODE:-development_header}
+      TRUSTED_PROXY_SECRET: ${TRUSTED_PROXY_SECRET:-}
+      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
+      READINESS_REQUIRE_REDIS: "true"
     ports:
       - "8000:8000"
     volumes:
@@ -33,7 +41,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/api/ready"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -56,9 +64,35 @@ services:
       SSE_POLL_INTERVAL_SECONDS: ${SSE_POLL_INTERVAL_SECONDS:-1}
       SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-15}
       USE_MOCK_INFERENCE: ${USE_MOCK_INFERENCE:-true}
+      INPUT_RETENTION_HOURS: ${INPUT_RETENTION_HOURS:-24}
+      OUTPUT_RETENTION_HOURS: ${OUTPUT_RETENTION_HOURS:-168}
+      CLEANUP_BATCH_SIZE: ${CLEANUP_BATCH_SIZE:-100}
+      ORPHAN_GRACE_HOURS: ${ORPHAN_GRACE_HOURS:-2}
     volumes:
       - voice_storage:/data/storage
       - model_cache:/data/models
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ./backend
+    command: ["celery", "-A", "app.workers.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-voice}:${POSTGRES_PASSWORD:-voice}@database:5432/${POSTGRES_DB:-voice}
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_PATH: /data/storage
+      CLEANUP_BATCH_SIZE: ${CLEANUP_BATCH_SIZE:-100}
+      OUTPUT_RETENTION_HOURS: ${OUTPUT_RETENTION_HOURS:-168}
+      ORPHAN_GRACE_HOURS: ${ORPHAN_GRACE_HOURS:-2}
+    volumes:
+      - voice_storage:/data/storage
     depends_on:
       database:
         condition: service_healthy

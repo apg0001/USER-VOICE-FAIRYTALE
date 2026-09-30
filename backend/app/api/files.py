@@ -1,6 +1,7 @@
 import asyncio
 import os
 import tempfile
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, BinaryIO
@@ -15,7 +16,7 @@ from app.api.dependencies import get_actor_id
 from app.audio.ffmpeg import MediaToolError
 from app.audio.types import NoiseReduction, PreprocessingConfig
 from app.audio.validation import AudioValidationError
-from app.db.models import Job, JobOutput, User
+from app.db.models import InputArtifact, Job, JobOutput, User
 from app.db.session import get_db_session
 from app.services.user_service import resolve_user
 
@@ -84,6 +85,21 @@ async def upload_job_input(
             namespace=f"users/{user.id}/inputs",
             config=preprocessing,
         )
+        tracked = InputArtifact(
+            user_id=user.id,
+            kind=input_kind.value,
+            original_storage_key=artifact.original_storage_key,
+            cleaned_storage_key=artifact.cleaned_storage_key,
+            expires_at=datetime.now(UTC)
+            + timedelta(hours=request.app.state.settings.input_retention_hours),
+        )
+        session.add(tracked)
+        try:
+            await session.commit()
+        except Exception:
+            await request.app.state.file_service.storage.delete(artifact.cleaned_storage_key)
+            await request.app.state.file_service.storage.delete(artifact.original_storage_key)
+            raise
         return InputFileResponse(
             input_storage_key=artifact.cleaned_storage_key,
             duration_seconds=artifact.probe.duration_seconds,

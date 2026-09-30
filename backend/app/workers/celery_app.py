@@ -10,7 +10,7 @@ celery_app = Celery(
     "voice_fairy_tale",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.workers.inference_worker"],
+    include=["app.workers.inference_worker", "app.workers.cleanup_worker"],
 )
 celery_app.conf.update(
     task_serializer="json",
@@ -21,6 +21,12 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_max_tasks_per_child=20,
     timezone="UTC",
+    beat_schedule={
+        "cleanup-expired-artifacts": {
+            "task": "voice.cleanup_expired",
+            "schedule": 900.0,
+        }
+    },
 )
 
 

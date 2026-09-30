@@ -61,7 +61,10 @@ async def stream_job_events(
         previous_payload: dict[str, object] | None = None
         last_emit = time.monotonic()
         yield "retry: 2000\n\n"
-        while not await request.is_disconnected():
+        # StreamingResponse cancels this generator when the client disconnects.
+        # Polling request.is_disconnected() here is unreliable behind HTTP middleware and
+        # can terminate an otherwise active stream before the next durable snapshot.
+        while True:
             try:
                 payload, job_status = await _job_snapshot(request, actor_id, job_id)
             except JobNotFoundError:

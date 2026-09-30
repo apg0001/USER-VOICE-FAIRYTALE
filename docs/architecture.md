@@ -90,11 +90,12 @@ storage/                    # git 미추적 local object storage
 
 | Table | 핵심 필드 | 책임 |
 |---|---|---|
-| users | id, external_id, is_active | 인증 시스템과 내부 소유권 연결 |
+| users | id, external_id, is_active, deletion_requested_at | 인증 시스템과 내부 소유권·전체 삭제 상태 연결 |
+| input_artifacts | user_id, original/cleaned key, kind, expires_at, retry | Job 입력 소유권과 보존기간 추적 |
 | voice_profiles | user_id, consent_version/at, status, metadata | 사용자 음성 논리 단위와 동의 |
 | voice_samples | profile_id, original/cleaned key, 품질 지표 | 원본·정제 음성 추적 |
 | jobs | mode, status, progress, model_key, input, config, metrics, error | 비동기 작업 상태의 기준 |
-| job_outputs | job_id, storage_key, duration, metadata | 생성 결과와 재현 metadata |
+| job_outputs | job_id, storage_key, duration, metadata, expires_at | 생성 결과·provenance·보존기간 |
 | models | key, version, type, enabled, config | 배포 가능한 모델 catalog |
 
 파일 binary는 DB BLOB가 아니라 Storage에 저장한다. 외래 키 삭제 정책은 profile/sample/output에는 CASCADE, profile이 삭제된 과거 Job에는 SET NULL을 적용한다. Alembic `0001`이 이 초안을 반영한다.
@@ -138,7 +139,7 @@ CUDA OOM은 해당 Job을 `FAILED(GPU_OUT_OF_MEMORY)`로 기록하고 adapter �
 7. Source separation, Singing VC, mixing — Mock 계약 구현 완료
 8. GPU ModelManager와 OOM recovery — CPU Mock 계약 구현 완료
 9. SSE/ETA/Queue/History UX — 구현 완료
-10. 관측성, 정리, 보안, 배포/rollback
+10. 관측성, 정리, 보안, 배포/rollback — 구현 완료
 
 ## 11. Phase별 GitHub Issue
 

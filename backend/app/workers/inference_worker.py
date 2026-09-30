@@ -1,6 +1,7 @@
 import asyncio
 import time
 from contextlib import ExitStack
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import structlog
@@ -26,6 +27,7 @@ from app.models.voice_conversion import (
 )
 from app.pipelines import SingingPipeline, TTSPipeline, VoiceConversionPipeline
 from app.queue import CeleryJobQueue
+from app.safety import OutputProvenance
 from app.services.job_service import InvalidJobTransitionError, JobService
 from app.storage import LocalObjectStorage
 from app.workers.celery_app import celery_app
@@ -61,6 +63,13 @@ async def execute_job(job_id: str) -> dict[str, str]:
     generated_storage_key: str | None = None
     output_storage = LocalObjectStorage(settings.storage_path)
     started = time.monotonic()
+
+    def provenance() -> dict[str, object]:
+        assert model is not None
+        return OutputProvenance(
+            model_key=model.descriptor.key,
+            model_version=model.descriptor.version,
+        ).to_dict()
     try:
         async with session_factory() as session:
             service = JobService(session, CeleryJobQueue())
@@ -183,7 +192,10 @@ async def execute_job(job_id: str) -> dict[str, str]:
                             "sample_rate": result.sample_rate,
                             "chunk_count": result.chunk_count,
                             "model": job.model_key,
+                            "provenance": provenance(),
                         },
+                        expires_at=datetime.now(UTC)
+                        + timedelta(hours=settings.output_retention_hours),
                     )
                 )
                 generated_storage_key = result.storage_key
@@ -239,7 +251,10 @@ async def execute_job(job_id: str) -> dict[str, str]:
                             "chunk_count": conversion.chunk_count,
                             "model": job.model_key,
                             "preserved": ["duration", "sample_rate", "timing"],
+                            "provenance": provenance(),
                         },
+                        expires_at=datetime.now(UTC)
+                        + timedelta(hours=settings.output_retention_hours),
                     )
                 )
                 generated_storage_key = conversion.storage_key
@@ -312,7 +327,10 @@ async def execute_job(job_id: str) -> dict[str, str]:
                             "separator": separator.descriptor.key,
                             "preserved": preserved,
                             "manifest": singing.manifest,
+                            "provenance": provenance(),
                         },
+                        expires_at=datetime.now(UTC)
+                        + timedelta(hours=settings.output_retention_hours),
                     )
                 )
                 generated_storage_key = singing.storage_key

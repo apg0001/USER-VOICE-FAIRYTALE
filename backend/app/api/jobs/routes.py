@@ -186,5 +186,15 @@ async def retry_job(
             status_code=503,
             detail={"code": "QUEUE_UNAVAILABLE", "job_id": error.job_id},
         ) from error
+    except InvalidVoiceProfileError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="재시도에 필요한 음성 프로필을 사용할 수 없습니다.",
+        ) from error
+    except InvalidInputFileError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="재시도에 필요한 입력 파일이 만료되었거나 삭제되었습니다.",
+        ) from error
     return await serialize_job(service, job)
 

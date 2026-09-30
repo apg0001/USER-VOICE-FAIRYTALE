@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 9 Voice Studio Job UX**. 소유자 전용 SSE 진행률과 reconnect cursor/heartbeat, polling fallback, 작업 이력·Queue/ETA, 취소·재시도, 인증된 결과 재생·다운로드가 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
+> 현재 범위: **Phase 10 운영 안정성·보안**. 소유자 전용 Job UX에 더해 구조화 로그/trace/metrics/readiness, 입력·출력 보존기간, 재시도 가능한 cleanup, 사용자 전체 삭제와 운영 runbook이 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
 
 ## 주요 기능
 
@@ -12,6 +12,8 @@
 - 음성 품질 검증, 선택적 noise reduction, Voice Profile 관리
 - 비동기 Job, 진행률, ETA, Queue 위치, 취소·재시도
 - 교체 가능한 모델 adapter와 GPU lifecycle 관리
+- DB 추적 보존기간, orphan reconciliation, 사용자 전체 데이터 삭제
+- 민감정보 redaction, Prometheus 지표, readiness와 trusted proxy 인증 경계
 
 현재 구현 여부는 [개발 단계](#개발-단계)와 GitHub Issue #1–#10을 기준으로 확인합니다.
 
@@ -53,6 +55,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  │  ├─ profiles/         # 모델별 Voice Profile builder와 registry
 │  │  ├─ queue/            # Celery를 감싸는 JobQueue 계약
 │  │  ├─ services/         # Job 상태 전이와 application rule
+│  │  ├─ safety/           # provenance, watermark/abuse extension port
 │  │  ├─ storage/          # ObjectStorage와 안전한 local adapter
 │  │  └─ workers/          # Celery app와 inference task 경계
 │  └─ tests/{api,unit}/     # GPU가 필요 없는 테스트
@@ -69,6 +72,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  ├─ singing-voice-conversion.md # 보컬 분리·SVC·재합성 계약
 │  ├─ model-manager.md      # GPU 진단, model lease/LRU/OOM 복구 계약
 │  ├─ studio-job-ux.md      # SSE와 Voice Studio 작업 UX 계약
+│  ├─ operations.md         # 배포·관측·보존·복구 runbook
 │  └─ security.md          # 동의·업로드·삭제 원칙
 ├─ docker-compose.yml      # CPU/Mock 개발 stack
 ├─ docker-compose.gpu.yml  # NVIDIA device override
@@ -96,6 +100,8 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 - `backend/app/services/job_service.py`: 멱등 생성, 상태 전이, 취소·재시도, ETA
 - `backend/app/services/voice_service.py`: 동의 우선 검증, 등록·소유권·삭제 수명주기
 - `backend/app/services/file_service.py`: 원본/정제본을 분리하는 안전한 ingest orchestration
+- `backend/app/services/cleanup_service.py`: 만료·pending 삭제 retry와 orphan reconciliation
+- `backend/app/core/metrics.py`: bounded-label Prometheus metric registry
 - `backend/app/audio/ffmpeg.py`: shell을 사용하지 않는 ffprobe/ffmpeg 실행과 품질 분석
 - `backend/app/queue/`: API 테스트와 Celery를 분리하는 Queue port/adapter
 - `backend/app/storage/local.py`: UUID key와 경로 순회 방어를 갖춘 개발 저장소
@@ -133,6 +139,8 @@ Registry는 구체 라이브러리 대신 stable model key와 capability를 노�
 | Method | Path | 현재 상태 | 설명 |
 |---|---|---|---|
 | GET | `/api/health` | 구현 | process liveness와 version |
+| GET | `/api/ready` | 구현 | DB·storage·선택적 Redis readiness |
+| GET | `/api/metrics` | 구현 | Prometheus 호환 요청·Job·삭제 지표 |
 | GET | `/api/models` | 구현 | capability별 등록 모델 |
 | GET | `/api/voices/consent` | 구현 | 현재 동의문과 버전 |
 | POST/GET | `/api/voices` | 구현 | 동의 기반 Voice Profile 등록·목록 |
@@ -144,6 +152,7 @@ Registry는 구체 라이브러리 대신 stable model key와 capability를 노�
 | POST | `/api/jobs/{id}/cancel` | 구현 | cooperative cancel |
 | POST | `/api/jobs/{id}/retry` | 구현 | 실패·취소 작업 재시도 |
 | GET | `/api/files/{id}` | 구현 | Job 소유권 검사 후 WAV 결과 stream |
+| DELETE | `/api/users/me` | 구현 | 활성 Job 취소와 소유 데이터 전체 추적 삭제 |
 
 아직 구현되지 않은 endpoint를 빈 성공 응답으로 제공하지 않습니다.
 
@@ -171,7 +180,7 @@ Worker 시작 시 Mock mode는 PyTorch를 import하지 않고 device 설정만 �
 
 ## Docker
 
-서비스는 `frontend`, `backend`, `worker`, `redis`, `database`입니다. 미디어와 모델은 named volume에 저장하고 DB와 Redis는 health check 뒤에 의존 서비스를 시작합니다.
+서비스는 `frontend`, `backend`, `worker`, `scheduler`, `redis`, `database`입니다. scheduler는 15분마다 보존기간 cleanup을 실행합니다. 미디어와 모델은 named volume에 저장하고 DB와 Redis는 health check 뒤에 의존 서비스를 시작합니다.
 
 Docker Desktop 또는 Docker Engine이 설치된 환경에서:
 
@@ -212,8 +221,15 @@ cd frontend && npm ci
 | `GPU_VRAM_RESERVE_MB` | 512 | model admission 후 남겨 둘 VRAM 안전 여유 |
 | `SSE_POLL_INTERVAL_SECONDS` | 1 | SSE가 DB 상태를 다시 읽는 간격 |
 | `SSE_HEARTBEAT_SECONDS` | 15 | proxy idle timeout 방지 heartbeat 간격 |
+| `AUTH_MODE` | `development_header` | 개발 header 또는 운영 trusted proxy |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE` | 120 | API process별 요청 방어 한도 |
+| `READINESS_REQUIRE_REDIS` | false | readiness Redis ping 필수 여부 |
 | `USE_MOCK_INFERENCE` | `true` | 개발/CI model registry |
 | `TEMP_RETENTION_HOURS` | 24 | 디버그 임시 파일 최대 보존 |
+| `INPUT_RETENTION_HOURS` | 24 | 입력 원본·정제본 보존시간 |
+| `OUTPUT_RETENTION_HOURS` | 168 | 생성 결과 보존시간 |
+| `CLEANUP_BATCH_SIZE` | 100 | cleanup 종류별 batch 상한 |
+| `ORPHAN_GRACE_HOURS` | 2 | orphan 판정 전 commit 유예시간 |
 | `VOICE_CONSENT_VERSION` | `2026-09-01` | 등록 시 요구하는 동의문 버전 |
 | `MIN_VOICE_PROFILE_SPEECH_SECONDS` | 10 | 프로필 생성에 필요한 유효 발화 길이 |
 
@@ -276,7 +292,7 @@ curl -X POST http://localhost:8000/api/jobs \
 - [x] Phase 7: Source Separation + Singing VC + Mixing
 - [x] Phase 8: ModelManager/GPU/OOM
 - [x] Phase 9: SSE/ETA/Queue/History UX
-- [ ] Phase 10: logging/monitoring/cleanup/security/deploy
+- [x] Phase 10: logging/monitoring/cleanup/security/deploy
 
 ## Development Workflow
 
@@ -303,7 +319,7 @@ GitHub Actions는 push/PR에서 backend Ruff·mypy·pytest, frontend ESLint·Vit
 
 ## Security
 
-Voice Cloning은 명시적 권한이 있는 음성만 허용합니다. 동의 없이는 Profile을 생성하지 않으며 원본/파생 데이터의 추적 삭제, UUID storage key, MIME/컨테이너 검증, 제한된 media probe, 민감 로그 차단을 적용합니다. 구현 계약은 [Voice Profile 문서](docs/voice-profiles.md), 운영 전 필수 통제는 [보안 문서](docs/security.md)에 있습니다.
+Voice Cloning은 명시적 권한이 있는 음성만 허용합니다. 동의 없이는 Profile을 생성하지 않으며 원본/파생 데이터의 추적 삭제, UUID storage key, MIME/컨테이너 검증, 제한된 media probe, 민감 로그 차단을 적용합니다. 구현 계약은 [Voice Profile 문서](docs/voice-profiles.md), [보안 문서](docs/security.md), [운영 Runbook](docs/operations.md)에 있습니다.
 
 ## Troubleshooting
 

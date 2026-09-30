@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     frontend_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
     )
+    auth_mode: Literal["development_header", "trusted_proxy"] = "development_header"
+    trusted_proxy_secret: SecretStr | None = None
+    rate_limit_requests_per_minute: int = Field(default=120, ge=1)
+    readiness_require_redis: bool = False
 
     database_url: str = "sqlite+aiosqlite:///./voice_fairy_tale.db"
     redis_url: str = "redis://localhost:6379/0"
@@ -43,6 +47,10 @@ class Settings(BaseSettings):
     sse_heartbeat_seconds: float = Field(default=15.0, gt=0)
     use_mock_inference: bool = True
     temp_retention_hours: int = 24
+    input_retention_hours: int = Field(default=24, ge=1)
+    output_retention_hours: int = Field(default=168, ge=1)
+    cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
+    orphan_grace_hours: int = Field(default=2, ge=1)
 
 
 @lru_cache
