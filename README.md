@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 6 Speech Voice Conversion**. 일반·장문 TTS에 더해 소유자 범위 입력 업로드, chunk 기반 발화 변환, 길이·timing 보존 검증과 실패 격리가 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
+> 현재 범위: **Phase 7 Singing Voice Conversion**. 일반·장문 TTS와 Speech VC에 더해 음악 입력의 보컬/반주 분리, 보컬 음색 변환, loudness 정렬·clipping 방지 재합성이 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
 
 ## 주요 기능
 
@@ -66,6 +66,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  ├─ voice-profiles.md     # 동의, 소유권, 저장·삭제 수명주기
 │  ├─ tts-pipeline.md       # 일반·장문 TTS와 결과 다운로드 계약
 │  ├─ speech-voice-conversion.md # 발화 변환과 보존 속성 계약
+│  ├─ singing-voice-conversion.md # 보컬 분리·SVC·재합성 계약
 │  └─ security.md          # 동의·업로드·삭제 원칙
 ├─ docker-compose.yml      # CPU/Mock 개발 stack
 ├─ docker-compose.gpu.yml  # NVIDIA device override
@@ -81,8 +82,12 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 - `backend/app/models/registry.py`: 모델 key/capability별 동적 선택
 - `backend/app/models/tts/`: TTS 전용 adapter 계약, registry, Mock WAV 모델
 - `backend/app/models/voice_conversion/`: Speech VC adapter 계약과 Mock 모델
+- `backend/app/models/separation/`: 보컬/반주 분리 adapter 계약과 Mock 모델
+- `backend/app/models/singing/`: Singing VC adapter 계약과 Mock 모델
+- `backend/app/audio/mixing.py`: 보컬 RMS 정렬, mixing, peak limiter
 - `backend/app/pipelines/tts.py`: 문장 chunking, checkpoint, WAV 결합·저장
 - `backend/app/pipelines/voice_conversion.py`: 발화 chunk 변환과 timing 검증
+- `backend/app/pipelines/singing.py`: 분리→SVC→재합성, manifest와 중간물 수명주기
 - `backend/app/profiles/registry.py`: 모델별 Voice Profile builder 선택과 실행
 - `backend/app/services/job_service.py`: 멱등 생성, 상태 전이, 취소·재시도, ETA
 - `backend/app/services/voice_service.py`: 동의 우선 검증, 등록·소유권·삭제 수명주기
@@ -123,7 +128,7 @@ Registry는 구체 라이브러리 대신 stable model key와 capability를 노�
 | GET | `/api/voices/consent` | 구현 | 현재 동의문과 버전 |
 | POST/GET | `/api/voices` | 구현 | 동의 기반 Voice Profile 등록·목록 |
 | GET/DELETE | `/api/voices/{id}` | 구현 | 소유자 범위 조회·추적 삭제 |
-| POST | `/api/files/inputs` | 구현 | 소유자 namespace 입력 검증·전처리 |
+| POST | `/api/files/inputs` | 구현 | 소유자 namespace 입력 검증·전처리; `speech`/`singing` preset |
 | POST/GET | `/api/jobs` | 구현 | 멱등 작업 생성·목록 |
 | GET | `/api/jobs/{id}` | 구현 | 소유자 범위 상태·진행률 조회 |
 | POST | `/api/jobs/{id}/cancel` | 구현 | cooperative cancel |
@@ -134,7 +139,7 @@ Registry는 구체 라이브러리 대신 stable model key와 capability를 노�
 
 ## AI Worker
 
-Celery Worker는 API와 별도 프로세스입니다. `voice.run_inference`는 DB에서 Job을 읽고 각 단계 상태를 commit하며 Mock 모델 lifecycle을 끝까지 실행합니다. 실제 오디오를 생성하지 않으며 대용량 PyTorch/CUDA 의존성은 향후 별도 Worker image에만 설치합니다.
+Celery Worker는 API와 별도 프로세스입니다. `voice.run_inference`는 DB에서 Job을 읽고 각 단계 상태를 commit하며 Mock 모델 lifecycle을 끝까지 실행합니다. Mock은 유효한 WAV를 생성하지만 실제 음색 품질 모델은 아니며, 대용량 PyTorch/CUDA 의존성은 향후 별도 Worker image에만 설치합니다.
 
 ## Queue
 
@@ -252,7 +257,7 @@ curl -X POST http://localhost:8000/api/jobs \
 - [x] Phase 4: 동의 기반 Voice Profile
 - [x] Phase 5: 일반/장문 TTS
 - [x] Phase 6: Speech VC
-- [ ] Phase 7: Source Separation + Singing VC + Mixing
+- [x] Phase 7: Source Separation + Singing VC + Mixing
 - [ ] Phase 8: ModelManager/GPU/OOM
 - [ ] Phase 9: SSE/ETA/Queue/History UX
 - [ ] Phase 10: logging/monitoring/cleanup/security/deploy
