@@ -1,6 +1,6 @@
 import wave
 from array import array
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.config import get_settings
 from app.core.gpu import GPUSnapshot
 from app.db import Base
-from app.db.models import JobMode, JobOutput, JobStatus, VoiceProfile
+from app.db.models import InputArtifact, JobMode, JobOutput, JobStatus, VoiceProfile
 from app.models.base import ModelCapability, ModelDescriptor
 from app.models.manager import ModelManager
 from app.models.tts import TTSAudio
@@ -198,6 +198,16 @@ async def test_mock_worker_completes_singing_pipeline(
             namespace=f"users/{user.id}/inputs/cleaned",
             suffix="wav",
         )
+        session.add(
+            InputArtifact(
+                user_id=user.id,
+                kind="singing",
+                original_storage_key=input_key,
+                cleaned_storage_key=input_key,
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        await session.commit()
         service = JobService(session, RecordingQueue())
         job, _ = await service.create_job(
             "singing-worker-user",
