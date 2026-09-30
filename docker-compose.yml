@@ -51,7 +51,8 @@ services:
       STORAGE_PATH: /data/storage
       MODEL_PATH: /data/models
       CUDA_DEVICE: ${CUDA_DEVICE:-cuda:0}
-      MODEL_CACHE_LIMIT: ${MODEL_CACHE_LIMIT:-1}
+      MODEL_CACHE_LIMIT: ${MODEL_CACHE_LIMIT:-2}
+      GPU_VRAM_RESERVE_MB: ${GPU_VRAM_RESERVE_MB:-512}
       USE_MOCK_INFERENCE: ${USE_MOCK_INFERENCE:-true}
     volumes:
       - voice_storage:/data/storage

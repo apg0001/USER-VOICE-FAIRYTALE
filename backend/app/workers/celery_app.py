@@ -1,8 +1,11 @@
+import structlog
 from celery import Celery
+from celery.signals import worker_process_init, worker_process_shutdown
 
 from app.core.config import get_settings
 
 settings = get_settings()
+log = structlog.get_logger(__name__)
 celery_app = Celery(
     "voice_fairy_tale",
     broker=settings.redis_url,
@@ -19,4 +22,27 @@ celery_app.conf.update(
     worker_max_tasks_per_child=20,
     timezone="UTC",
 )
+
+
+@worker_process_init.connect  # type: ignore[untyped-decorator]
+def report_worker_device(**_: object) -> None:
+    if settings.use_mock_inference:
+        log.info(
+            "worker_device_ready",
+            device=settings.cuda_device,
+            gpu_required=False,
+            reason="mock-inference",
+        )
+        return
+    from app.workers.model_runtime import get_worker_model_manager
+
+    snapshot = get_worker_model_manager(settings).diagnose()
+    log.info("worker_device_ready", gpu_required=True, **snapshot.to_dict())
+
+
+@worker_process_shutdown.connect  # type: ignore[untyped-decorator]
+def release_worker_models(**_: object) -> None:
+    from app.workers.model_runtime import reset_worker_model_manager
+
+    reset_worker_model_manager()
 

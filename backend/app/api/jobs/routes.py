@@ -34,6 +34,10 @@ ERROR_MESSAGES = {
     "QUEUE_UNAVAILABLE": "작업 대기열에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
     "MODEL_NOT_FOUND": "요청한 음성 모델을 사용할 수 없습니다.",
     "INFERENCE_FAILED": "음성 처리 중 오류가 발생했습니다.",
+    "GPU_UNAVAILABLE": "추론 GPU를 사용할 수 없습니다. 운영 상태를 확인해 주세요.",
+    "VRAM_ADMISSION_FAILED": "현재 GPU 메모리가 부족합니다. 잠시 후 다시 시도해 주세요.",
+    "MODEL_CAPACITY_EXCEEDED": "모델이 모두 사용 중입니다. 잠시 후 다시 시도해 주세요.",
+    "CUDA_OOM": "GPU 메모리 부족으로 작업이 중단되었습니다. 다시 시도해 주세요.",
 }
 
 

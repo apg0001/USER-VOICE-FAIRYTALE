@@ -6,12 +6,12 @@
 
 - 저장소: <https://github.com/apg0001/USER-VOICE-FAIRYTALE>
 - 기준 브랜치: `develop`
-- Phase 7 직전 `develop` commit: `5cdcc38`; 정확한 최신 commit은 `git rev-parse HEAD`로 확인
-- 완료된 Phase: 1–7
-- 다음 제품 Phase: [#8 GPU Model Manager와 OOM 복구](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/8)
+- Phase 8 직전 `develop` commit: `276be50`; 정확한 최신 commit은 `git rev-parse HEAD`로 확인
+- 완료된 Phase: 1–8
+- 다음 제품 Phase: [#9 작업 진행률과 Voice Studio UX](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/9)
 - 별도 모델 검증: [#11 실제 한국어 TTS 모델 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
 - 현재 inference는 모두 계약 검증용 Mock이다. 실제 사람의 음색을 생성한다고 주장하면 안 된다.
-- Phase 7 로컬 기준 검증: Ruff/mypy 통과, pytest 35 passed·2 skipped, coverage 81%, frontend lint/build 통과
+- Phase 8 로컬 기준 검증: Ruff/mypy 통과, pytest 46 passed·2 skipped, coverage 82%, frontend lint/build 통과
 - 최근 `develop` CI는 `gh run list --branch develop --limit 3`으로 확인
 
 작업 시작 직후 다음을 다시 확인한다. 이 문서의 숫자보다 Git과 GitHub 상태가 우선한다.
@@ -51,13 +51,15 @@ FastAPI는 요청·소유권·metadata를 담당하고, 무거운 inference는 C
 - Speech VC chunking, 길이·frame 수·sample rate 보존 계약
 - 독립적인 Separation/Singing adapter와 10초 chunk 기반 Singing VC
 - 원본 보컬 RMS 정렬, -1 dBFS limiter, 반주 재합성, stem hash manifest
+- Worker process 범위 model lease, lazy load, cache hit와 idle LRU eviction
+- GPU availability/VRAM admission, CUDA OOM 격리와 다음 Job 복구 계약
+- model cache/device/load/eviction/OOM recovery Job metrics와 GPU 점검 명령
 - Job 결과 metadata와 소유자 전용 다운로드
 - Studio의 Voice Profile 등록, TTS/Speech/Singing 입력·생성·polling/download
 
 아직 구현되지 않은 실제 동작:
 
 - 실제 TTS/VC/SVC/분리 모델과 GPU dependency
-- ModelManager, VRAM admission, CUDA OOM 복구
 - SSE, 작업 이력·플레이어·완전한 취소/재시도 UX
 - 인증 공급자, 저장 암호화, 감사 로그, rate limit, watermark/abuse 대응
 - 입력 원본·정제본의 보존기간 cleanup과 사용자 전체 삭제
@@ -108,8 +110,10 @@ backend/app/
 │  ├─ mixing.py             # RMS 정렬, 반주 mixing, peak limiter
 │  └─ preprocessing/        # 전처리 orchestration
 ├─ db/models.py             # User, VoiceProfile, VoiceSample, Job, JobOutput
+├─ core/gpu.py              # PyTorch lazy import CUDA/VRAM 진단
 ├─ models/
 │  ├─ base.py               # 공통 VoiceModel/descriptor/capability
+│  ├─ manager.py            # lease, lock, LRU, admission, OOM cleanup
 │  ├─ tts/                  # TTSModel, Mock, registry
 │  ├─ voice_conversion/     # VoiceConversionModel, Mock, registry
 │  ├─ separation/           # SeparationModel, Mock, registry
@@ -126,11 +130,13 @@ backend/app/
 │  ├─ user_service.py       # 개발 identity → User 해석
 │  └─ voice_service.py      # 동의와 profile 수명주기
 ├─ storage/                 # storage port와 local adapter
-└─ workers/inference_worker.py
-                              # 현재 mode dispatch와 durable transition
+└─ workers/
+   ├─ inference_worker.py    # mode dispatch, lease와 durable transition
+   ├─ model_runtime.py       # process 범위 ModelManager singleton
+   └─ gpu_check.py           # 실제 GPU 사전 점검 CLI
 ```
 
-`inference_worker.py`가 Phase 5–7 mode 분기로 커졌다. Phase 8 ModelManager를 연결할 때 mode executor/dispatcher 분리를 검토하되 기존 상태 전이·결과 정리 규칙을 보존한다.
+`inference_worker.py`가 Phase 5–8 mode 분기와 lifecycle 처리를 함께 가진다. 다음 backend 확장 시 mode executor/dispatcher 분리를 검토하되 기존 상태 전이·결과 정리·lease 규칙을 보존한다.
 
 Frontend의 단일 주요 화면은 `frontend/src/App.tsx`다. Phase 9 전까지 과도한 상태관리 library를 추가하지 않는다.
 
@@ -181,7 +187,7 @@ OpenAPI는 실행 후 `http://localhost:8000/api/docs`에서 확인한다.
 - `CUDA_DEVICE`
 - `MAX_UPLOAD_SIZE`, `MAX_AUDIO_DURATION_SECONDS`
 - `VOICE_CONSENT_VERSION`, `MIN_VOICE_PROFILE_SPEECH_SECONDS`
-- `MODEL_CACHE_LIMIT`, `USE_MOCK_INFERENCE`, `TEMP_RETENTION_HOURS`
+- `MODEL_CACHE_LIMIT`, `GPU_VRAM_RESERVE_MB`, `USE_MOCK_INFERENCE`, `TEMP_RETENTION_HOURS`
 
 환경값을 새로 추가하면 두 파일과 README 환경 변수 표를 함께 갱신한다. 실제 `.env`나 secret은 commit하지 않는다.
 
@@ -228,68 +234,59 @@ docker compose up
 ```powershell
 git switch develop
 git pull --ff-only origin develop
-git switch -c "feat/#8-model-manager"
+git switch -c "feat/#9-studio-job-ux"
 ```
 
 구현 후 논리 단위로 커밋한다.
 
 ```text
-[feat] GPU 진단과 Model Manager 구현
-[test] Model lifecycle과 OOM 복구 계약 검증
-[docs] GPU 운영 경계와 장애 복구 문서화
+[feat] Job 진행 SSE와 reconnect 계약 구현
+[feat] Voice Studio 작업 이력과 제어 UX 구현
+[test] 진행률 재연결과 주요 사용자 흐름 검증
+[docs] Job UX와 fallback 운영 계약 문서화
 ```
 
 그 다음:
 
 ```powershell
-git push -u origin "feat/#8-model-manager"
-gh run list --branch "feat/#8-model-manager" --limit 3
+git push -u origin "feat/#9-studio-job-ux"
+gh run list --branch "feat/#9-studio-job-ux" --limit 3
 gh run watch RUN_ID --exit-status
 git switch develop
 git pull --ff-only origin develop
-git merge --no-ff "feat/#8-model-manager" -m "[feat] GPU Model Manager를 develop에 병합"
+git merge --no-ff "feat/#9-studio-job-ux" -m "[feat] Voice Studio Job UX를 develop에 병합"
 git push origin develop
 ```
 
 `develop` CI가 성공한 뒤에만 상세 검증 댓글과 함께 Issue를 닫는다. `main`에는 직접 병합하지 않는다.
 
-## 11. 다음 작업: Phase 8 권장 구현 순서
+## 11. 다음 작업: Phase 9 권장 구현 순서
 
-Issue: [#8](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/8)
-Branch: `feat/#8-model-manager`
+Issue: [#9](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/9)
+Branch: `feat/#9-studio-job-ux`
 
 권장 순서:
 
-1. Issue 본문과 `docs/architecture.md`의 GPU/Model lifecycle 계약을 다시 확인한다.
-2. `(model key, version, device)` 단위 cache entry와 adapter factory를 관리하는 `ModelManager`를 만든다.
-3. 동일 모델의 중복 load를 막는 per-entry lock과 Worker concurrency 1 전제를 명시한다.
-4. CUDA/PyTorch가 없어도 import와 CPU Mock 테스트가 가능한 진단 port를 둔다.
-5. lazy load 전에 VRAM admission을 수행하고, 부족하면 참조되지 않는 LRU entry를 unload한다.
-6. Job 실행 동안 lease/reference를 유지해 사용 중 모델이 eviction되지 않게 한다.
-7. CUDA OOM은 현재 Job만 실패시키고 adapter 참조 해제, GC, CUDA cache 정리 후 Worker health를 재검증한다.
-8. TTS/VC/Singing의 직접 `load/unload`를 Manager lease로 교체한다. Singing은 separator와 SVC 두 lease가 필요하다.
-9. model load time, cache hit/miss, eviction, device/VRAM metadata를 민감정보 없이 Job metric/log에 남긴다.
-10. CPU fake device/model로 cache, lock, eviction, load 실패, OOM 격리 test를 작성한다.
-11. 실제 GPU smoke test는 일반 CI와 분리하고 실행 조건과 증거를 문서화한다.
+1. 현재 Job 조회/목록/취소/retry schema와 소유권 검사를 재사용한다.
+2. `backend/app/api/jobs/events.py`에 소유자 범위 SSE endpoint를 추가한다.
+3. event ID/cursor, heartbeat, terminal event와 disconnect 정리를 정의한다.
+4. DB polling 기반 SSE라도 connection당 무한 session/transaction을 잡지 않게 한다.
+5. Frontend API/state를 component에서 분리하고 SSE 우선, timeout/error 시 polling fallback을 유지한다.
+6. 작업 이력에 status, progress, queue position, 근거가 있을 때만 ETA를 표시한다.
+7. 진행 중 취소와 실패/취소 retry를 연결하고 멱등/중복 클릭을 방어한다.
+8. 결과는 인증 header를 포함한 blob fetch 후 audio player와 download로 제공한다.
+9. 빈 상태, API 오류, SSE 재연결, terminal 상태, keyboard/focus/label 접근성을 구현한다.
+10. Backend SSE 소유권/terminal/heartbeat test와 Frontend 주요 흐름 test를 추가한다.
 
-Phase 8 완료 조건:
+Phase 9 완료 조건:
 
-- 같은 모델의 동시 요청이 중복 load되지 않는다.
-- 사용 중 모델은 eviction되지 않고 LRU 제한이 지켜진다.
-- OOM 후 다음 Mock Job을 처리할 수 있으며 Worker 전체가 종료되지 않는다.
-- API image에 PyTorch/CUDA dependency가 추가되지 않는다.
-- GPU가 없는 CI에서 전체 계약을 재현할 수 있다.
+- 다른 사용자의 Job event/history가 노출되지 않는다.
+- SSE disconnect/reconnect와 polling fallback이 중복 상태 갱신 없이 동작한다.
+- 생성→진행→완료→재생/다운로드, 취소, retry 흐름이 검증된다.
+- ETA가 근거 없을 때 숨겨지고 Queue 위치/오류 안내가 명확하다.
+- 키보드만으로 주요 작업을 수행할 수 있다.
 
 ## 12. 이후 작업 순서
-
-### Phase 8 — Issue #8
-
-- `ModelManager` lazy load/unload, model key/version/device cache
-- per-model lifecycle lock, Worker당 명시적 GPU 소유권
-- CUDA/GPU/VRAM/PyTorch 진단
-- VRAM admission과 LRU unload
-- CUDA OOM → 현재 Job 실패 → 참조 제거/GC/cache 정리 → Worker health 확인
-- GPU 없는 CI Mock test와 실제 GPU runner 절차 분리
 
 ### Phase 9 — Issue #9
 
@@ -324,7 +321,8 @@ Phase 8의 ModelManager/Worker image 경계가 준비된 뒤 진행하는 편이
 ## 13. 알려진 기술 부채와 함정
 
 - Mock TTS는 tone WAV, Mock VC/SVC는 gain 변환, Mock separation은 sample 비율 분할이다. 품질 검증용 모델이 아니다.
-- `inference_worker.py`의 mode dispatch가 커지고 있어 Phase 8 Manager 연결 시 executor 분리를 검토한다.
+- `inference_worker.py`의 mode dispatch와 lifecycle 분기가 커졌으므로 다음 backend 기능 확장 시 executor 분리를 검토한다.
+- ModelManager의 실제 VRAM 수치는 아직 실제 adapter metadata와 GPU runner 측정이 없다. Mock 테스트 결과를 실제 GPU 검증으로 오인하지 않는다.
 - TTS/VC/Singing checkpoint는 진행 metadata를 영속화하지만 chunk 오디오 재개 manifest까지 구현하지 않았다.
 - 입력 업로드의 원본·정제본 보존기간과 DB 추적은 Phase 10 과제다.
 - Voice Profile 삭제 후 과거 Job의 `voice_profile_id`는 `SET NULL`이므로 결과 provenance 보존 정책을 재검토해야 한다.
@@ -347,6 +345,7 @@ Phase 8의 ModelManager/Worker image 경계가 준비된 뒤 진행하는 편이
    - [TTS Pipeline](tts-pipeline.md)
    - [Speech Voice Conversion](speech-voice-conversion.md)
    - [Singing Voice Conversion](singing-voice-conversion.md)
+   - [GPU Model Manager](model-manager.md)
 5. [보안 원칙](security.md)
 
 문서와 코드가 다르면 코드를 확인하고 같은 작업에서 문서를 바로 고친다.

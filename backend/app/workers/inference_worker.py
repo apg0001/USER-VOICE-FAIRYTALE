@@ -1,5 +1,6 @@
 import asyncio
 import time
+from contextlib import ExitStack
 from typing import Any, cast
 
 import structlog
@@ -10,6 +11,12 @@ from app.db.models import JobMode, JobOutput, JobStatus, VoiceProfile
 from app.db.session import create_session_factory
 from app.models import build_model_registry
 from app.models.base import VoiceModel
+from app.models.manager import (
+    GPUUnavailableError,
+    ModelCacheKey,
+    ModelCapacityError,
+    VRAMAdmissionError,
+)
 from app.models.separation import SeparationModel, build_separation_registry
 from app.models.singing import SingingVoiceModel, build_singing_registry
 from app.models.tts import TTSModel, build_tts_model_registry
@@ -22,6 +29,7 @@ from app.queue import CeleryJobQueue
 from app.services.job_service import InvalidJobTransitionError, JobService
 from app.storage import LocalObjectStorage
 from app.workers.celery_app import celery_app
+from app.workers.model_runtime import get_worker_model_manager
 
 log = structlog.get_logger(__name__)
 
@@ -30,13 +38,26 @@ class JobExecutionCancelled(Exception):
     pass
 
 
+def _failure_code(error: Exception) -> str:
+    if isinstance(error, GPUUnavailableError):
+        return "GPU_UNAVAILABLE"
+    if isinstance(error, VRAMAdmissionError):
+        return "VRAM_ADMISSION_FAILED"
+    if isinstance(error, ModelCapacityError):
+        return "MODEL_CAPACITY_EXCEEDED"
+    return "INFERENCE_FAILED"
+
+
 async def execute_job(job_id: str) -> dict[str, str]:
     """Execute one persisted Job; every durable state change is committed to the DB."""
 
     settings = get_settings()
     engine, session_factory = create_session_factory(settings.database_url)
+    manager = get_worker_model_manager(settings)
+    lease_stack = ExitStack()
     model: Any | None = None
-    loaded_models: list[Any] = []
+    active_cache_keys: set[ModelCacheKey] = set()
+    model_cache_metrics: list[dict[str, object]] = []
     generated_storage_key: str | None = None
     output_storage = LocalObjectStorage(settings.storage_path)
     started = time.monotonic()
@@ -56,33 +77,64 @@ async def execute_job(job_id: str) -> dict[str, str]:
             is_speech_vc = job.mode == JobMode.SPEECH_VOICE_CONVERSION
             is_singing_vc = job.mode == JobMode.SINGING_VOICE_CONVERSION
             separator: SeparationModel | None = None
+            load_time = 0.0
             if is_tts:
                 tts_registry = build_tts_model_registry(
                     include_mock=settings.use_mock_inference
                 )
-                model = tts_registry.create(job.model_key)
+                tts_lease = lease_stack.enter_context(
+                    manager.lease("tts", lambda: tts_registry.create(job.model_key))
+                )
+                model = tts_lease.model
+                active_cache_keys.add(tts_lease.cache_key)
+                model_cache_metrics.append(tts_lease.metrics())
+                load_time += tts_lease.load_seconds
             elif is_speech_vc:
                 conversion_registry = build_voice_conversion_registry(
                     include_mock=settings.use_mock_inference
                 )
-                model = conversion_registry.create(job.model_key)
+                conversion_lease = lease_stack.enter_context(
+                    manager.lease(
+                        "speech-vc", lambda: conversion_registry.create(job.model_key)
+                    )
+                )
+                model = conversion_lease.model
+                active_cache_keys.add(conversion_lease.cache_key)
+                model_cache_metrics.append(conversion_lease.metrics())
+                load_time += conversion_lease.load_seconds
             elif is_singing_vc:
-                separator = build_separation_registry(
+                separation_registry = build_separation_registry(
                     include_mock=settings.use_mock_inference
-                ).create("mock-separator-v1")
-                model = build_singing_registry(
+                )
+                singing_registry = build_singing_registry(
                     include_mock=settings.use_mock_inference
-                ).create(job.model_key)
+                )
+                separator_lease = lease_stack.enter_context(
+                    manager.lease(
+                        "separation",
+                        lambda: separation_registry.create("mock-separator-v1"),
+                    )
+                )
+                singing_lease = lease_stack.enter_context(
+                    manager.lease(
+                        "singing-vc", lambda: singing_registry.create(job.model_key)
+                    )
+                )
+                separator = separator_lease.model
+                model = singing_lease.model
+                for acquired_lease in (separator_lease, singing_lease):
+                    active_cache_keys.add(acquired_lease.cache_key)
+                    model_cache_metrics.append(acquired_lease.metrics())
+                    load_time += acquired_lease.load_seconds
             else:
                 registry = build_model_registry(include_mock=settings.use_mock_inference)
-                model = registry.create(job.model_key)
-            load_started = time.monotonic()
-            if separator is not None:
-                loaded_models.append(separator)
-                separator.load()
-            loaded_models.append(model)
-            model.load()
-            load_time = time.monotonic() - load_started
+                generic_lease = lease_stack.enter_context(
+                    manager.lease("generic", lambda: registry.create(job.model_key))
+                )
+                model = generic_lease.model
+                active_cache_keys.add(generic_lease.cache_key)
+                model_cache_metrics.append(generic_lease.metrics())
+                load_time += generic_lease.load_seconds
 
             if await service.is_cancelled(job_id):
                 return {"job_id": job_id, "status": JobStatus.CANCELLED.value}
@@ -296,6 +348,8 @@ async def execute_job(job_id: str) -> dict[str, str]:
             tracked_job.metrics = {
                 "input_duration": tracked_job.request_config.get("input_duration"),
                 "model_loading_time": round(load_time, 6),
+                "model_cache": model_cache_metrics,
+                "gpu": model_cache_metrics[-1]["gpu"] if model_cache_metrics else {},
                 "inference_time": round(inference_time, 6),
                 "postprocessing_time": round(postprocess_time, 6),
                 "processing_time": round(time.monotonic() - started, 6),
@@ -342,7 +396,21 @@ async def execute_job(job_id: str) -> dict[str, str]:
         log.info("worker_transition_skipped", job_id=job_id, reason=str(error))
         return {"job_id": job_id, "status": "transition-skipped"}
     except Exception as error:
-        log.exception("worker_task_failed", job_id=job_id, error_type=type(error).__name__)
+        is_oom = manager.is_out_of_memory(error)
+        oom_recovery: dict[str, object] | None = None
+        if is_oom:
+            lease_stack.close()
+            snapshot = manager.recover_after_oom(active_cache_keys)
+            oom_recovery = {
+                "recovered": True,
+                "device": snapshot.to_dict(),
+            }
+        log.exception(
+            "worker_task_failed",
+            job_id=job_id,
+            error_type=type(error).__name__,
+            cuda_oom=is_oom,
+        )
         try:
             if generated_storage_key is not None:
                 await output_storage.delete(generated_storage_key)
@@ -352,20 +420,24 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 )
                 await recovery_session.commit()
                 service = JobService(recovery_session, CeleryJobQueue())
+                if oom_recovery is not None:
+                    tracked = await service.get_job(job_id, for_update=True)
+                    tracked.metrics = {
+                        **tracked.metrics,
+                        "oom_recovery": oom_recovery,
+                        "model_cache": model_cache_metrics,
+                    }
+                    await recovery_session.commit()
                 await service.fail_job(
                     job_id,
-                    code="INFERENCE_FAILED",
+                    code="CUDA_OOM" if is_oom else _failure_code(error),
                     detail=type(error).__name__,
                 )
         except Exception:
             log.exception("worker_failure_persistence_failed", job_id=job_id)
         return {"job_id": job_id, "status": JobStatus.FAILED.value}
     finally:
-        for loaded_model in reversed(loaded_models):
-            try:
-                loaded_model.unload()
-            except Exception:
-                log.exception("model_unload_failed", job_id=job_id)
+        lease_stack.close()
         await engine.dispose()
 
 
