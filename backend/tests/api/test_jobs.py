@@ -1,10 +1,11 @@
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 
 from conftest import RecordingQueue
 from fastapi.testclient import TestClient
 
-from app.db.models import VoiceProfile
+from app.db.models import JobOutput, VoiceProfile
 from app.services.user_service import resolve_user
 
 HEADERS = {"X-User-ID": "user-alice", "Idempotency-Key": "request-00000001"}
@@ -16,11 +17,37 @@ PAYLOAD = {
 }
 
 
+def seed_profile(job_client: TestClient, owner: str, status: str = "READY") -> str:
+    async def create() -> str:
+        async with job_client.app.state.session_factory() as session:
+            user = await resolve_user(session, owner, create=True)
+            assert user is not None
+            profile = VoiceProfile(
+                user_id=user.id,
+                name=f"{owner} voice",
+                status=status,
+                consent_version="2026-09-01",
+                consented_at=datetime.now(UTC),
+                profile_metadata={},
+            )
+            session.add(profile)
+            await session.commit()
+            await session.refresh(profile)
+            return profile.id
+
+    return asyncio.run(create())
+
+
+def tts_payload(profile_id: str) -> dict[str, object]:
+    return {**PAYLOAD, "voice_profile_id": profile_id}
+
+
 def test_create_is_idempotent_and_owned(
     job_client: TestClient, recording_queue: RecordingQueue
 ) -> None:
-    first = job_client.post("/api/jobs", headers=HEADERS, json=PAYLOAD)
-    repeated = job_client.post("/api/jobs", headers=HEADERS, json=PAYLOAD)
+    profile_id = seed_profile(job_client, "user-alice")
+    first = job_client.post("/api/jobs", headers=HEADERS, json=tts_payload(profile_id))
+    repeated = job_client.post("/api/jobs", headers=HEADERS, json=tts_payload(profile_id))
 
     assert first.status_code == 202
     assert repeated.status_code == 202
@@ -36,7 +63,10 @@ def test_create_is_idempotent_and_owned(
 
 
 def test_list_cancel_and_retry(job_client: TestClient, recording_queue: RecordingQueue) -> None:
-    created = job_client.post("/api/jobs", headers=HEADERS, json=PAYLOAD).json()
+    profile_id = seed_profile(job_client, "user-alice")
+    created = job_client.post(
+        "/api/jobs", headers=HEADERS, json=tts_payload(profile_id)
+    ).json()
 
     listing = job_client.get("/api/jobs", headers={"X-User-ID": "user-alice"})
     assert listing.status_code == 200
@@ -59,17 +89,28 @@ def test_list_cancel_and_retry(job_client: TestClient, recording_queue: Recordin
 
 
 def test_job_input_and_model_are_validated(job_client: TestClient) -> None:
+    profile_id = seed_profile(job_client, "user-alice")
+    missing_profile = job_client.post(
+        "/api/jobs",
+        headers=HEADERS,
+        json=PAYLOAD,
+    )
     missing_text = job_client.post(
         "/api/jobs",
         headers={"X-User-ID": "user-alice"},
-        json={"mode": "general_tts", "model_key": "mock-universal-v1"},
+        json={
+            "mode": "general_tts",
+            "model_key": "mock-universal-v1",
+            "voice_profile_id": profile_id,
+        },
     )
     wrong_model = job_client.post(
         "/api/jobs",
         headers={"X-User-ID": "user-alice"},
-        json={**PAYLOAD, "model_key": "unknown"},
+        json={**tts_payload(profile_id), "model_key": "unknown"},
     )
 
+    assert missing_profile.status_code == 422
     assert missing_text.status_code == 422
     assert wrong_model.status_code == 422
 
@@ -77,37 +118,66 @@ def test_job_input_and_model_are_validated(job_client: TestClient) -> None:
 def test_job_rejects_another_users_or_unready_voice_profile(
     job_client: TestClient,
 ) -> None:
-    async def seed_profile(owner: str, status: str) -> str:
-        async with job_client.app.state.session_factory() as session:
-            user = await resolve_user(session, owner, create=True)
-            assert user is not None
-            profile = VoiceProfile(
-                user_id=user.id,
-                name=f"{owner} voice",
-                status=status,
-                consent_version="2026-09-01",
-                consented_at=datetime.now(UTC),
-                profile_metadata={},
-            )
-            session.add(profile)
-            await session.commit()
-            await session.refresh(profile)
-            return profile.id
-
-    other_users_profile_id = asyncio.run(seed_profile("user-bob", "READY"))
-    unready_profile_id = asyncio.run(seed_profile("user-alice", "PROCESSING"))
+    other_users_profile_id = seed_profile(job_client, "user-bob")
+    unready_profile_id = seed_profile(job_client, "user-alice", "PROCESSING")
 
     other_users_profile = job_client.post(
         "/api/jobs",
         headers={**HEADERS, "Idempotency-Key": "request-00000002"},
-        json={**PAYLOAD, "voice_profile_id": other_users_profile_id},
+        json=tts_payload(other_users_profile_id),
     )
     unready_profile = job_client.post(
         "/api/jobs",
         headers={**HEADERS, "Idempotency-Key": "request-00000003"},
-        json={**PAYLOAD, "voice_profile_id": unready_profile_id},
+        json=tts_payload(unready_profile_id),
     )
 
     assert other_users_profile.status_code == 422
     assert unready_profile.status_code == 422
+
+
+def test_job_output_is_listed_and_owner_can_download(
+    job_client: TestClient, tmp_path: Path
+) -> None:
+    profile_id = seed_profile(job_client, "user-alice")
+    created = job_client.post(
+        "/api/jobs", headers=HEADERS, json=tts_payload(profile_id)
+    ).json()
+    source = tmp_path / "result.wav"
+    source.write_bytes(b"RIFFmock-wave")
+    storage_key = asyncio.run(
+        job_client.app.state.file_service.storage.put(
+            source, namespace=f"jobs/{created['id']}/outputs", suffix="wav"
+        )
+    )
+
+    async def seed_output() -> str:
+        async with job_client.app.state.session_factory() as session:
+            output = JobOutput(
+                job_id=created["id"],
+                storage_key=storage_key,
+                content_type="audio/wav",
+                duration_seconds=1.25,
+                output_metadata={},
+            )
+            session.add(output)
+            await session.commit()
+            await session.refresh(output)
+            return output.id
+
+    output_id = asyncio.run(seed_output())
+    detail = job_client.get(
+        f"/api/jobs/{created['id']}", headers={"X-User-ID": "user-alice"}
+    )
+    downloaded = job_client.get(
+        f"/api/files/{output_id}", headers={"X-User-ID": "user-alice"}
+    )
+    hidden = job_client.get(
+        f"/api/files/{output_id}", headers={"X-User-ID": "user-bob"}
+    )
+
+    assert detail.json()["outputs"][0]["download_url"] == f"/api/files/{output_id}"
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"RIFFmock-wave"
+    assert hidden.status_code == 404
 
