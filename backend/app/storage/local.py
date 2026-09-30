@@ -1,9 +1,12 @@
 import asyncio
+import os
+import tempfile
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from app.storage.base import ObjectStorage
+from app.storage.base import ObjectStorage, StoredObject
 
 
 class LocalObjectStorage(ObjectStorage):
@@ -37,4 +40,29 @@ class LocalObjectStorage(ObjectStorage):
         path = self._safe_path(key)
         if path.exists():
             await asyncio.to_thread(path.unlink)
+
+    async def healthcheck(self) -> None:
+        def probe() -> None:
+            descriptor, name = tempfile.mkstemp(prefix=".health-", dir=self.root)
+            os.close(descriptor)
+            Path(name).unlink(missing_ok=True)
+
+        await asyncio.to_thread(probe)
+
+    async def list_objects(self, prefix: str) -> list[StoredObject]:
+        root = self._safe_path(prefix.strip("/\\"))
+
+        def scan() -> list[StoredObject]:
+            if not root.exists():
+                return []
+            return [
+                StoredObject(
+                    key=path.relative_to(self.root).as_posix(),
+                    modified_at=datetime.fromtimestamp(path.stat().st_mtime, tz=UTC),
+                )
+                for path in root.rglob("*")
+                if path.is_file()
+            ]
+
+        return await asyncio.to_thread(scan)
 

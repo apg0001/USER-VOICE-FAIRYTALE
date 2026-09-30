@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Job, JobMode, JobStatus, VoiceProfile
+from app.db.models import InputArtifact, Job, JobMode, JobStatus, VoiceProfile
 from app.queue import JobQueue
 from app.services.user_service import resolve_user
 
@@ -130,11 +130,20 @@ class JobService:
         if command.mode in {
             JobMode.SPEECH_VOICE_CONVERSION,
             JobMode.SINGING_VOICE_CONVERSION,
-        } and (
-            not command.input_storage_key
-            or not command.input_storage_key.startswith(f"users/{user_id}/inputs/")
-        ):
-            raise InvalidInputFileError(command.input_storage_key or "")
+        }:
+            artifact = (
+                await self.session.scalar(
+                    select(InputArtifact).where(
+                        InputArtifact.user_id == user_id,
+                        InputArtifact.cleaned_storage_key == command.input_storage_key,
+                        InputArtifact.expires_at > datetime.now(UTC),
+                    )
+                )
+                if command.input_storage_key
+                else None
+            )
+            if artifact is None:
+                raise InvalidInputFileError(command.input_storage_key or "")
 
         if idempotency_key:
             existing = await self.session.scalar(

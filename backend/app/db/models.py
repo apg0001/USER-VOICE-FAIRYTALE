@@ -42,8 +42,28 @@ class User(UUIDTimestampMixin, Base):
 
     external_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    voice_profiles: Mapped[list["VoiceProfile"]] = relationship(back_populates="user")
-    jobs: Mapped[list["Job"]] = relationship(back_populates="user")
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    voice_profiles: Mapped[list["VoiceProfile"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
+    jobs: Mapped[list["Job"]] = relationship(back_populates="user", passive_deletes=True)
+    input_artifacts: Mapped[list["InputArtifact"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
+
+
+class InputArtifact(UUIDTimestampMixin, Base):
+    __tablename__ = "input_artifacts"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    original_storage_key: Mapped[str] = mapped_column(String(512), unique=True)
+    cleaned_storage_key: Mapped[str] = mapped_column(String(512), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    deletion_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(String(120))
+
+    user: Mapped[User] = relationship(back_populates="input_artifacts")
 
 
 class VoiceProfile(UUIDTimestampMixin, Base):
@@ -57,7 +77,9 @@ class VoiceProfile(UUIDTimestampMixin, Base):
     profile_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     user: Mapped[User] = relationship(back_populates="voice_profiles")
-    samples: Mapped[list["VoiceSample"]] = relationship(back_populates="voice_profile")
+    samples: Mapped[list["VoiceSample"]] = relationship(
+        back_populates="voice_profile", passive_deletes=True
+    )
 
 
 class VoiceSample(UUIDTimestampMixin, Base):
@@ -126,7 +148,9 @@ class Job(UUIDTimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(back_populates="jobs")
-    outputs: Mapped[list["JobOutput"]] = relationship(back_populates="job")
+    outputs: Mapped[list["JobOutput"]] = relationship(
+        back_populates="job", passive_deletes=True
+    )
 
 
 class JobOutput(UUIDTimestampMixin, Base):
@@ -137,6 +161,7 @@ class JobOutput(UUIDTimestampMixin, Base):
     content_type: Mapped[str] = mapped_column(String(100), default="audio/wav")
     duration_seconds: Mapped[float | None] = mapped_column(Float)
     output_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     job: Mapped[Job] = relationship(back_populates="outputs")
 
