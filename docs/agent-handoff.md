@@ -1,155 +1,166 @@
 # 후속 에이전트 인수인계 문서
 
-이 문서는 이전 대화 기록 없이 Voice Fairy Tale 개발을 이어가기 위한 단일 진입점이다. 먼저 이 문서를 끝까지 읽고, 링크된 설계 문서는 현재 작업에 필요한 것만 추가로 확인한다.
+이 문서는 이전 대화 기록 없이 Voice Fairy Tale 개발을 이어가기 위한 단일 진입점이다. 먼저 끝까지 읽고, 현재 Git/GitHub 상태를 확인한 뒤 작업한다. 문서보다 코드와 원격 상태가 우선이지만 불일치가 있으면 같은 작업에서 문서를 고친다.
 
-## 1. 현재 상태
+## 1. 저장소와 현재 상태
 
 - 저장소: <https://github.com/apg0001/USER-VOICE-FAIRYTALE>
 - 기준 브랜치: `develop`
-- Phase 9 직전 `develop` commit: `76c8c28`; 정확한 최신 commit은 `git rev-parse HEAD`로 확인
-- 완료된 Phase: 1–9
-- 다음 제품 Phase: [#10 운영 안정성·보안·정리 정책](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/10)
-- 별도 모델 검증: [#11 실제 한국어 TTS 모델 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
-- 현재 inference는 모두 계약 검증용 Mock이다. 실제 사람의 음색을 생성한다고 주장하면 안 된다.
-- Phase 9 로컬 기준 검증: Ruff/mypy 통과, pytest 48 passed·2 skipped, coverage 82%, frontend 6 tests·lint/build 통과
-- 최근 `develop` CI는 `gh run list --branch develop --limit 3`으로 확인
+- 완료 Phase: 1–10
+- 다음 이슈: [#11 실제 한국어 TTS 모델 품질·라이선스 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
+- 현재 inference adapter는 모두 계약 검증용 Mock이다. 실제 사람 음색 품질을 제공한다고 주장하면 안 된다.
+- Phase 10 로컬 검증 기준: backend Ruff/mypy 통과, pytest 54 passed·2 skipped, coverage 82%; frontend 6 passed·lint/build 통과; Alembic `base → 0003 → base` 왕복 통과
+- Windows 개발 머신에는 ffmpeg와 Docker가 없어 ffmpeg 통합 2개가 skip될 수 있다. Ubuntu GitHub Actions에서 ffmpeg와 Docker build를 검증한다.
 
-작업 시작 직후 다음을 다시 확인한다. 이 문서의 숫자보다 Git과 GitHub 상태가 우선한다.
+작업 시작 시 반드시 다음을 실행한다.
 
 ```powershell
 git status --short
 git branch --show-current
-git pull --ff-only origin develop
+git log -5 --oneline
 gh issue list --state open
 gh run list --branch develop --limit 3
 ```
 
-`develop`이 dirty하면 사용자 변경을 임의로 버리지 말고 겹치는 파일을 먼저 확인한다.
+`develop`이 clean이고 최신인지 확인한 뒤 새 이슈 branch를 만든다. dirty하면 사용자 변경을 버리지 말고 겹치는 파일을 먼저 확인한다.
 
-## 2. 제품 목표와 현재 경계
+## 2. 제품 경계
 
-제품은 사용자가 명시적으로 권한을 확인한 Voice Profile로 다음 작업을 비동기 실행하는 확장 가능한 Voice AI Platform이다.
+사용자가 권리를 확인하고 동의한 Voice Profile로 TTS, Speech Voice Conversion, Singing Voice Conversion을 비동기 실행하는 플랫폼이다.
 
 ```text
-Text ───────────────→ TTS ─────────────────────────┐
-Speech ─────────────→ Voice Conversion ────────────┼→ JobOutput → Download
-Music → Separation → Singing VC → Mixing ─────────┘
-                       ▲
-Voice Sample → Validation/Preprocess → Voice Profile
+Browser → React/Nginx → FastAPI → PostgreSQL
+                         │  ├──→ Object Storage
+                         │  └──→ Redis → Celery Worker → GPU/Models
+                         └─────→ SSE/polling status
+
+Celery Beat → retention cleanup → DB metadata + Object Storage
 ```
 
-FastAPI는 요청·소유권·metadata를 담당하고, 무거운 inference는 Celery Worker만 실행한다. PostgreSQL의 `jobs`가 영속 상태의 기준이고 Redis는 Queue다. 바이너리는 Object Storage adapter 뒤에 저장한다.
+FastAPI는 인증 경계, schema, owner 검증, Job/파일 metadata만 처리한다. 무거운 inference와 CUDA import는 Worker에서만 한다. PostgreSQL `jobs`가 영속 상태의 기준이고 Redis는 전달 계층이다. 음성 binary는 DB BLOB가 아니라 `ObjectStorage` 뒤에 둔다.
 
-현재 구현된 실제 동작:
+현재 구현된 동작:
 
-- 동의 기반 Voice Profile 등록·조회·삭제
-- WAV/MP3/M4A/FLAC magic/MIME/확장자 검증
-- ffprobe/ffmpeg 기반 speech mono 24 kHz / singing stereo 44.1 kHz PCM WAV 변환, trim/normalize/denoise 선택
-- Job 멱등 생성, 상태 전이, 진행률, Queue 위치, 취소, 재시도
-- 일반/장문 TTS chunking과 Mock WAV 생성
-- 사용자 namespace 기반 Speech VC 입력 업로드
-- Speech VC chunking, 길이·frame 수·sample rate 보존 계약
-- 독립적인 Separation/Singing adapter와 10초 chunk 기반 Singing VC
-- 원본 보컬 RMS 정렬, -1 dBFS limiter, 반주 재합성, stem hash manifest
-- Worker process 범위 model lease, lazy load, cache hit와 idle LRU eviction
-- GPU availability/VRAM admission, CUDA OOM 격리와 다음 Job 복구 계약
-- model cache/device/load/eviction/OOM recovery Job metrics와 GPU 점검 명령
-- 소유자 전용 Job SSE, reconnect cursor, heartbeat와 terminal 종료
-- Studio SSE 우선/polling fallback, 작업 이력, 취소·재시도, Queue/ETA
-- 인증 header 기반 blob audio player/download와 frontend Vitest 계약
-- Job 결과 metadata와 소유자 전용 다운로드
-- Studio의 Voice Profile 등록, TTS/Speech/Singing 입력·생성·polling/download
+- 오디오 magic/MIME/확장자·크기·길이 검증과 ffmpeg 전처리
+- 동의 버전·권리 선언 기반 Voice Profile 등록, owner 조회, pending 삭제
+- Job 멱등 생성, 상태 전이, 진행률, Queue 위치, ETA, 취소, retry
+- 일반/장문 Mock TTS, Speech VC, Separation/Singing VC, loudness/mixing
+- ModelManager lease, lazy load, VRAM admission, idle LRU, CUDA OOM 격리
+- owner 전용 SSE, Last-Event-ID, heartbeat, reconnect와 polling fallback
+- Studio 이력, cancel/retry, 오류 표시, 결과 재생·다운로드
+- 입력 원본/정제본 owner·만료 추적, 출력 만료와 synthetic provenance
+- 15분 cleanup, storage 실패 retry, active input skip, orphan 유예 정리
+- owner 범위 사용자 전체 데이터 삭제와 삭제 중 계정 차단
+- JSON 로그 redaction, request/trace correlation, Prometheus 지표
+- liveness/readiness 분리, production trusted-proxy 강제, process rate limit
+- 배포/rollback/backup/restore/incident runbook과 배포 검증 script
 
-아직 구현되지 않은 실제 동작:
+아직 구현되지 않은 동작:
 
-- 실제 TTS/VC/SVC/분리 모델과 GPU dependency
-- 인증 공급자, 저장 암호화, 감사 로그, rate limit, watermark/abuse 대응
-- 입력 원본·정제본의 보존기간 cleanup과 사용자 전체 삭제
+- 실제 TTS/VC/SVC/분리 model adapter와 GPU acceptance
+- 실제 IdP 또는 인증 gateway 배포 구성
+- S3/MinIO storage adapter, at-rest encryption, multipart/checksum
+- 실제 비가청 watermark provider와 abuse moderation sink/API
+- 분산 rate limit와 중앙 trace backend
 
-## 3. 변경하면 안 되는 핵심 원칙
+이 미구현 항목을 문서나 UI에서 구현된 것으로 표현하지 않는다.
 
-1. API 프로세스에서 CUDA 모델을 import하거나 inference하지 않는다.
-2. Queue message에는 `job_id`만 넣고 민감 데이터나 대용량 payload를 넣지 않는다.
-3. 구체 모델을 pipeline에서 직접 참조하지 않고 adapter/registry 계약 뒤에 둔다.
-4. 음성 바이너리를 DB BLOB으로 저장하지 않는다.
-5. 사용자 파일명을 storage path로 사용하지 않는다.
-6. 실제 동의 버전과 권한 선언을 음성 처리 전에 검증한다.
-7. 다른 사용자의 profile, input key, job, output 존재 여부를 노출하지 않는다.
-8. 계산할 근거가 없는 ETA나 품질 수치를 만들어내지 않는다.
-9. 실제 모델의 라이선스와 weights 라이선스를 별도로 확인한다.
-10. 코드, 테스트, README/관련 문서를 같은 작업에서 갱신한다.
+## 3. 변경하면 안 되는 원칙
 
-현재 `X-User-ID`는 개발용 신뢰 경계일 뿐 인증이 아니다. 공개 운영 전에 검증된 인증 토큰 subject로 교체해야 한다.
+1. API process에서 CUDA 모델을 import하거나 inference하지 않는다.
+2. Queue payload에는 `job_id`만 넣고 text, audio, token, config 전문을 넣지 않는다.
+3. 구체 모델은 adapter/registry/manager 계약 뒤에서만 선택한다.
+4. 사용자 파일명은 storage path에 사용하지 않고 UUID key를 발급한다.
+5. 모든 profile/input/job/output API는 DB owner 조건으로 존재와 권한을 동시에 검사한다.
+6. Voice Profile 처리 전에 현재 동의 버전과 사용 권한 선언을 검증한다.
+7. 계산 근거가 없는 ETA·품질·GPU 수치를 만들지 않는다.
+8. storage 삭제 성공 전에 추적 metadata를 삭제하지 않는다.
+9. 로그에 raw subject, input text, audio bytes, token, storage key, 절대경로를 남기지 않는다.
+10. 실제 model code와 weights의 라이선스·출처·배포 의무를 각각 확인한다.
+11. 코드, 테스트, README, 관련 문서를 같은 branch에서 함께 갱신한다.
+12. feature CI와 develop merge CI가 모두 성공한 뒤 이슈를 닫는다.
 
-## 4. 기술 스택과 실행 환경
+## 4. 인증과 운영 보안
 
-| 영역 | 현재 선택 |
-|---|---|
-| API/Worker | Python 3.11+, FastAPI, SQLAlchemy async, Celery |
-| DB/Queue | PostgreSQL, Redis; 테스트는 SQLite/aiosqlite |
-| Media | ffmpeg/ffprobe, Python `wave` 기반 Mock pipeline |
-| Frontend | React, TypeScript, Vite, Nginx |
-| Storage | `ObjectStorage` 계약과 `LocalObjectStorage` |
-| 품질 | Ruff 0.16.9, mypy 1.20.2, pytest, ESLint, TypeScript |
-| 배포 검증 | Docker Compose, GitHub Actions |
+`AUTH_MODE=development_header`는 `X-User-ID`를 사용하는 로컬/CI 전용 모드다. `APP_ENV=production`에서 이 모드면 app 생성이 실패한다.
 
-현재 Windows 개발 머신에는 ffmpeg와 Docker가 설치되지 않았다. 이 때문에 로컬 ffmpeg 통합 테스트 하나는 skip되며 Docker는 GitHub Actions에서 검증한다. Ubuntu CI에서는 ffmpeg 테스트와 backend/frontend/Docker build가 모두 실행된다.
+운영 모드는 `AUTH_MODE=trusted_proxy`이며 32자 이상의 `TRUSTED_PROXY_SECRET`, gateway가 검증한 `X-Authenticated-User`, private backend network가 모두 필요하다. Gateway는 외부가 보낸 두 header를 제거하고 새로 주입해야 한다. 이것은 IdP 자체가 아니라 IdP 검증을 끝낸 gateway와 backend 사이의 계약이다.
 
-GitHub Actions의 Node.js 20 deprecation 및 향후 `ubuntu-latest` 이미지 변경 경고는 알려져 있다. 기능 실패는 아니지만 Phase 10 이전에 action major version을 점검한다.
+Rate limiter는 process-local fixed window다. 공개 배포에는 ingress/Redis 기반 분산 quota를 추가한다. `/api/metrics`는 인증 endpoint가 아니므로 monitoring network만 접근하게 ingress에서 차단한다.
 
-## 5. 코드 지도
+## 5. 핵심 코드 지도
 
 ```text
 backend/app/
 ├─ api/
-│  ├─ jobs/                 # Job 생성·조회·취소·재시도 schema/routes
-│  │  └─ events.py          # 짧은 session 기반 소유자 전용 SSE
-│  ├─ voices/               # 동의, Voice Profile 등록·조회·삭제
-│  ├─ files.py              # 입력 업로드와 결과 다운로드
-│  └─ models.py             # capability별 모델 descriptor
-├─ audio/
-│  ├─ validation.py         # magic/MIME/확장자 검증
-│  ├─ ffmpeg.py             # shell-free ffprobe/ffmpeg와 품질 분석
-│  ├─ mixing.py             # RMS 정렬, 반주 mixing, peak limiter
-│  └─ preprocessing/        # 전처리 orchestration
-├─ db/models.py             # User, VoiceProfile, VoiceSample, Job, JobOutput
-├─ core/gpu.py              # PyTorch lazy import CUDA/VRAM 진단
+│  ├─ dependencies.py       # development/trusted-proxy actor 경계
+│  ├─ health.py             # /health, /ready, /metrics
+│  ├─ files.py              # input ingest 추적, owner output stream
+│  ├─ users.py              # DELETE /users/me
+│  ├─ jobs/                 # create/list/detail/cancel/retry/SSE
+│  └─ voices/               # consent/profile lifecycle
+├─ core/
+│  ├─ config.py             # 환경변수의 typed source
+│  ├─ logging.py            # JSON + recursive sensitive redaction
+│  ├─ metrics.py            # bounded label Prometheus registry
+│  ├─ rate_limit.py         # process-local 방어
+│  └─ gpu.py                # PyTorch lazy CUDA 진단
+├─ db/models.py             # User/InputArtifact/Profile/Sample/Job/Output
 ├─ models/
-│  ├─ base.py               # 공통 VoiceModel/descriptor/capability
-│  ├─ manager.py            # lease, lock, LRU, admission, OOM cleanup
-│  ├─ tts/                  # TTSModel, Mock, registry
-│  ├─ voice_conversion/     # VoiceConversionModel, Mock, registry
-│  ├─ separation/           # SeparationModel, Mock, registry
-│  └─ singing/              # SingingVoiceModel, Mock, registry
-├─ pipelines/
-│  ├─ tts.py                # text chunk → synthesize → WAV 저장
-│  ├─ voice_conversion.py   # PCM chunk → convert → 보존 검증 → WAV
-│  └─ singing.py            # separation → SVC → mixing → manifest
-├─ profiles/                # 모델별 Voice Profile builder
-├─ queue/                   # JobQueue 계약과 Celery adapter
+│  ├─ manager.py            # lease/lock/LRU/VRAM/OOM
+│  ├─ tts/                  # 다음 Phase의 실제 adapter 위치
+│  ├─ voice_conversion/
+│  ├─ separation/
+│  └─ singing/
+├─ pipelines/               # TTS/Speech/Singing orchestration
+├─ profiles/                # model별 Voice Profile builder
+├─ safety/base.py           # provenance, watermark/abuse port
 ├─ services/
-│  ├─ file_service.py       # 검증·전처리·원본/정제본 저장
-│  ├─ job_service.py        # 소유권, 멱등성, 상태 전이, ETA
-│  ├─ user_service.py       # 개발 identity → User 해석
-│  └─ voice_service.py      # 동의와 profile 수명주기
-├─ storage/                 # storage port와 local adapter
+│  ├─ cleanup_service.py    # retention, retry, full delete, orphan reconcile
+│  ├─ file_service.py       # original/cleaned ingest
+│  ├─ job_service.py        # owner/state/idempotency/ETA
+│  ├─ user_service.py       # external subject → User
+│  └─ voice_service.py      # consent/profile deletion
+├─ storage/                 # ObjectStorage + LocalObjectStorage
 └─ workers/
-   ├─ inference_worker.py    # mode dispatch, lease와 durable transition
-   ├─ model_runtime.py       # process 범위 ModelManager singleton
-   └─ gpu_check.py           # 실제 GPU 사전 점검 CLI
+   ├─ celery_app.py         # inference + cleanup task, beat schedule
+   ├─ cleanup_worker.py     # scheduled/manual cleanup
+   ├─ inference_worker.py   # mode dispatch, output/provenance, durable state
+   └─ model_runtime.py      # process-scoped ModelManager
 ```
 
-`inference_worker.py`가 Phase 5–8 mode 분기와 lifecycle 처리를 함께 가진다. 다음 backend 확장 시 mode executor/dispatcher 분리를 검토하되 기존 상태 전이·결과 정리·lease 규칙을 보존한다.
+주요 운영 파일:
 
-Frontend는 `App.tsx` orchestration, `jobMonitor.ts` transport, `JobHistory.tsx` 표시/제어로 분리되어 있다. 별도 전역 상태 library는 아직 필요하지 않다.
+- `backend/alembic/versions/0003_data_retention.py`: input tracking, user deletion timestamp, output expiry
+- `docs/operations.md`: 배포·관측·보존·백업·복구·장애 대응의 기준
+- `docs/security.md`: 위협 모델과 잔여 통제
+- `scripts/verify_deployment.py`: health/readiness/metrics smoke test
+- `.github/workflows/ci.yml`: backend/frontend/Docker CI
 
-## 6. 데이터와 소유권 계약
+## 6. 데이터·수명주기 계약
 
-- `users.external_id`: 현재 `X-User-ID`와 연결
-- `voice_profiles`: owner, consent version/time, `PROCESSING|READY|REJECTED|DELETION_PENDING`
-- `voice_samples`: original/cleaned key, probe/quality metadata
-- `jobs`: mode, status, profile/input, progress, timing, error, metrics
-- `job_outputs`: storage key, content type, duration, result metadata
+| Table | 책임 |
+|---|---|
+| `users` | 외부 subject와 내부 owner, 삭제 요청/비활성 상태 |
+| `input_artifacts` | 업로드 원본·정제 key, owner, kind, 만료, 삭제 retry |
+| `voice_profiles` | 동의 버전/시각, profile 상태와 model profile metadata |
+| `voice_samples` | profile 원본·정제 key와 품질 metadata |
+| `jobs` | mode/status/progress/input/model/error/metrics의 기준 |
+| `job_outputs` | 결과 key, duration, provenance, 만료 |
+
+보존 기본값:
+
+- 입력 원본/정제본: 24시간
+- 출력: 168시간
+- Voice Profile sample: profile 또는 사용자 삭제까지
+- pipeline temp/intermediate: 종료 즉시 삭제
+- orphan: DB 미추적 + 알려진 namespace + 2시간 유예 후 삭제
+
+Cleanup 순서는 expired input → expired output → pending profile → pending user → orphan이다. 활성 Job이 참조하는 입력은 만료되어도 건너뛴다. 기존 output처럼 `expires_at`이 null이면 `created_at + OUTPUT_RETENTION_HOURS`를 적용한다.
+
+사용자 전체 삭제는 active Job을 먼저 취소하고 owner query로 sample/input/output exact key를 모은다. 하나라도 storage delete가 실패하면 user metadata를 유지하고 `is_active=false`, `deletion_requested_at!=null`로 두어 API 접근을 410으로 차단한다. Scheduler가 재시도한다.
+
+## 7. Job·모델 계약
 
 상태 흐름:
 
@@ -158,43 +169,53 @@ QUEUED → PREPROCESSING → LOADING_MODEL → INFERENCE → POSTPROCESSING → 
    └──────────────── 각 단계에서 FAILED 또는 CANCELLED ────────────────┘
 ```
 
-모든 음성 Job에는 요청자 소유의 `READY` Voice Profile이 필요하다. Speech/Singing 입력 key는 `users/{internal_user_id}/inputs/` prefix를 만족해야 한다. 결과 다운로드는 `job_outputs → jobs → users` join으로 소유권을 검증한다.
+- 상태별 progress 범위를 벗어나거나 감소하면 거부한다.
+- `Idempotency-Key`는 동일 owner 내 중복 dispatch를 막는다.
+- retry는 FAILED/CANCELLED만 가능하며 profile/input이 삭제·만료되었으면 422다.
+- TTS/VC/Singing 결과에는 `OutputProvenance(model_key, model_version)`가 들어간다.
+- 실제 watermark는 `WatermarkProvider`를 구현해 publish 전에 적용해야 한다.
+- `AbuseReportSink`는 moderation system 연결 port일 뿐 기본 sink/API는 없다.
 
-주의: 입력 업로드는 원본과 정제본을 저장하지만 별도 upload table이 없다. 정제 key만 클라이언트에 반환되고 보존기간 정리는 아직 없다. Phase 10에서 추적 metadata와 cleanup을 완성해야 한다.
+ModelManager cache key는 `(role, model key, version, device)`다. lease 중인 model은 eviction하지 않는다. CUDA OOM은 해당 Job만 실패시키고 idle cache/GC/CUDA cache를 정리한 뒤 다음 Job이 실행 가능해야 한다.
 
-## 7. 현재 API
+## 8. 현재 API
 
 | Method | Path | 역할 |
 |---|---|---|
-| GET | `/api/health` | liveness/version |
-| GET | `/api/models` | capability별 모델 목록 |
-| GET | `/api/voices/consent` | 현재 동의문과 버전 |
-| POST/GET | `/api/voices` | Voice Profile 등록/목록 |
-| GET/DELETE | `/api/voices/{id}` | 소유자 조회/삭제 |
-| POST | `/api/files/inputs` | 소유자 namespace 입력 검증·전처리 |
-| GET | `/api/files/{output_id}` | 소유자 전용 결과 stream |
-| POST/GET | `/api/jobs` | Job 생성/목록 |
-| GET | `/api/jobs/{id}` | 상태, 진행률, output 조회 |
+| GET | `/api/health` | process liveness/version |
+| GET | `/api/ready` | DB/storage/선택적 Redis readiness |
+| GET | `/api/metrics` | Prometheus 요청·Job·삭제 지표 |
+| GET | `/api/models` | capability별 adapter descriptor |
+| GET | `/api/voices/consent` | 현재 동의문/버전 |
+| POST/GET | `/api/voices` | profile 등록/목록 |
+| GET/DELETE | `/api/voices/{id}` | owner 조회/pending 삭제 |
+| POST | `/api/files/inputs` | 입력 검증·전처리·추적 |
+| GET | `/api/files/{output_id}` | owner 결과 stream |
+| POST/GET | `/api/jobs` | 작업 생성/목록 |
+| GET | `/api/jobs/{id}` | owner 상태/결과 |
+| GET | `/api/jobs/{id}/events` | cursor/heartbeat SSE |
 | POST | `/api/jobs/{id}/cancel` | cooperative cancel |
-| POST | `/api/jobs/{id}/retry` | 실패·취소 Job 재시도 |
+| POST | `/api/jobs/{id}/retry` | terminal retry |
+| DELETE | `/api/users/me` | 전체 owner 데이터 추적 삭제 |
 
-OpenAPI는 실행 후 `http://localhost:8000/api/docs`에서 확인한다.
+## 9. 환경 설정
 
-## 8. 설정
+기준은 `.env.example`과 `backend/app/core/config.py`다.
 
-전체 기본값은 `.env.example`과 `backend/app/core/config.py`가 기준이다. 주요 값:
+필수 영역:
 
-- `DATABASE_URL`, `REDIS_URL`
-- `STORAGE_PATH`, `MODEL_PATH`
-- `FFMPEG_PATH`, `FFPROBE_PATH`
-- `CUDA_DEVICE`
-- `MAX_UPLOAD_SIZE`, `MAX_AUDIO_DURATION_SECONDS`
-- `VOICE_CONSENT_VERSION`, `MIN_VOICE_PROFILE_SPEECH_SECONDS`
-- `MODEL_CACHE_LIMIT`, `GPU_VRAM_RESERVE_MB`, `SSE_POLL_INTERVAL_SECONDS`, `SSE_HEARTBEAT_SECONDS`, `USE_MOCK_INFERENCE`, `TEMP_RETENTION_HOURS`
+- Runtime: `APP_ENV`, `LOG_LEVEL`, `FRONTEND_ORIGINS`
+- Auth: `AUTH_MODE`, `TRUSTED_PROXY_SECRET`, `RATE_LIMIT_REQUESTS_PER_MINUTE`
+- Infra: `DATABASE_URL`, `REDIS_URL`, `STORAGE_PATH`, `MODEL_PATH`
+- Media: `FFMPEG_PATH`, `FFPROBE_PATH`, upload/duration 제한
+- GPU: `CUDA_DEVICE`, `MODEL_CACHE_LIMIT`, `GPU_VRAM_RESERVE_MB`
+- Streaming: `SSE_POLL_INTERVAL_SECONDS`, `SSE_HEARTBEAT_SECONDS`
+- Retention: `INPUT_RETENTION_HOURS`, `OUTPUT_RETENTION_HOURS`, `CLEANUP_BATCH_SIZE`, `ORPHAN_GRACE_HOURS`
+- Model: `USE_MOCK_INFERENCE`, consent/minimum speech 설정
 
-환경값을 새로 추가하면 두 파일과 README 환경 변수 표를 함께 갱신한다. 실제 `.env`나 secret은 commit하지 않는다.
+새 설정을 추가하면 config, `.env.example`, compose, README, 운영 문서를 함께 갱신한다. 실제 secret이나 `.env`는 commit하지 않는다.
 
-## 9. 검증 명령
+## 10. 검증 명령
 
 Backend:
 
@@ -215,152 +236,97 @@ npm test
 npm run build
 ```
 
-변경 전 최종 확인:
+Migration은 임시 SQLite 또는 PostgreSQL test DB에서 `alembic upgrade head`, `alembic current`, 필요 시 `alembic downgrade base`를 검증한다. 실제 production DB를 downgrade 테스트에 사용하지 않는다.
+
+배포 후:
+
+```powershell
+python scripts/verify_deployment.py http://localhost:8000
+```
+
+최종 확인:
 
 ```powershell
 git diff --check
 git status --short
 ```
 
-Docker가 있는 환경:
+로컬 성공만으로 병합하지 않는다. feature branch GitHub Actions의 backend/frontend/docker를 확인하고 develop merge 후 CI도 다시 확인한다.
 
-```bash
-docker compose build
-docker compose up
-```
+## 11. Git/GitHub 규칙
 
-로컬 성공만으로 병합하지 않는다. feature branch GitHub Actions의 backend, frontend, docker가 모두 성공해야 한다. `develop` 병합 후 생성된 CI도 다시 확인한다.
+1. 상세 한국어 Issue를 확인하거나 먼저 생성한다.
+2. `<type>/#<number>-<topic>` branch에서 작업한다.
+3. 논리 단위별 한국어 commit을 만든다.
+4. feature branch를 push하고 CI 성공을 확인한다.
+5. `develop`에 `--no-ff` merge하고 push한다.
+6. develop CI 성공 뒤 검증 링크와 한계를 Issue에 기록하고 닫는다.
+7. `main`에는 직접 merge하지 않는다.
 
-## 10. Git/GitHub 작업 절차
-
-모든 큰 작업은 기존 한국어 Issue를 확인하고 다음 순서를 지킨다.
+예시:
 
 ```powershell
 git switch develop
 git pull --ff-only origin develop
-git switch -c "feat/#10-operations-security"
+git switch -c "feat/#11-real-tts-adapter"
 ```
 
-구현 후 논리 단위로 커밋한다.
+## 12. 다음 작업: Issue #11
 
-```text
-[feat] 구조화 관측성과 readiness 구현
-[feat] 보존기간 cleanup과 전체 데이터 삭제 구현
-[test] 삭제 복구와 보안 경계 검증
-[docs] 운영 runbook과 위협 모델 문서화
-```
-
-그 다음:
-
-```powershell
-git push -u origin "feat/#10-operations-security"
-gh run list --branch "feat/#10-operations-security" --limit 3
-gh run watch RUN_ID --exit-status
-git switch develop
-git pull --ff-only origin develop
-git merge --no-ff "feat/#10-operations-security" -m "[feat] 운영 안정성과 보안 정책을 develop에 병합"
-git push origin develop
-```
-
-`develop` CI가 성공한 뒤에만 상세 검증 댓글과 함께 Issue를 닫는다. `main`에는 직접 병합하지 않는다.
-
-## 11. 다음 작업: Phase 10 권장 구현 순서
-
-Issue: [#10](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/10)
-Branch: `feat/#10-operations-security`
+Issue #11은 외부 정보와 실제 GPU가 필요한 acceptance 작업이다. 후보를 이름만 보고 채택하지 않는다.
 
 권장 순서:
 
-1. 위협 모델과 데이터 inventory에서 원본/정제본/profile 파생물/input/output/temp의 owner와 보존기간을 확정한다.
-2. request/job/model/stage correlation이 가능한 구조화 로그와 민감정보 redaction filter를 만든다.
-3. liveness와 DB/Redis/storage/Worker 의존성을 확인하는 readiness를 분리한다.
-4. Prometheus 호환 request/job/queue/model/OOM/cleanup 지표와 trace 확장점을 추가한다.
-5. upload metadata를 DB에서 추적하고 보존기간 기반 cleanup service를 idempotent하게 구현한다.
-6. storage 삭제 실패를 재시도 가능한 상태로 남기고 orphan reconciliation을 구현한다.
-7. Voice Profile 삭제와 별도로 사용자 전체 Job/output/input/profile 데이터 삭제 흐름을 구현한다.
-8. 인증 token subject, rate limit, audit event, 저장 암호화 경계를 인터페이스와 배포 설정에 반영한다.
-9. abuse report/watermark/provenance 확장점을 실제 품질을 과장하지 않는 형태로 둔다.
-10. backup/restore, deploy/rollback, incident/OOM/storage 장애 runbook과 검증 스크립트를 작성한다.
-11. GitHub Actions runtime 경고를 해소하고 보안/삭제/복구 테스트를 CI에 포함한다.
+1. `docs/tts-pipeline.md`, `backend/app/models/tts/base.py`, registry, ModelManager와 Worker image 경계를 읽는다.
+2. OpenVoice V2 + 한국어 base TTS, CosyVoice 등 후보의 공식 repository/model card/paper만 조사한다.
+3. 코드 라이선스와 checkpoint/weights 라이선스를 별도 표로 기록한다. 상업 이용, 재배포, attribution, voice-cloning restriction이 불명확하면 채택하지 않는다.
+4. 한국어 고정 corpus와 평가 protocol을 먼저 확정한다. 숫자 기준 없이 청취 인상만으로 결정하지 않는다.
+5. 동일 GPU에서 load time, peak VRAM, real-time factor, 실패율을 측정한다. GPU 정보와 precision/batch/chunk 조건을 함께 기록한다.
+6. 발음/숫자/영문 혼용/장문 경계와 화자 유사도 평가를 분리한다. 동의된 음성만 쓴다.
+7. 채택 adapter는 `TTSModel` 계약 뒤에 두고 무거운 dependency는 별도 Worker image/optional dependency에만 넣는다.
+8. Mock과 실제 adapter에 같은 contract suite를 적용한다. API image에서 실제 model package가 import되지 않는 테스트를 유지한다.
+9. model key/version/source/checkpoint hash/license를 provenance와 배포 문서에 남긴다.
+10. 실제 GPU runner가 없으면 코드·Mock으로 통과했다고 acceptance 완료로 표시하지 말고, 무엇이 미검증인지 Issue에 명시한다.
 
-Phase 10 완료 조건:
-
-- 보존기간 cleanup과 사용자 전체 삭제가 다른 사용자의 object를 건드리지 않는다.
-- storage 실패 후 재시도/reconciliation으로 수렴한다.
-- 로그/metric/trace에 음성 byte, 원문, token, secret, 절대 사용자 경로가 없다.
-- readiness가 의존성 장애를 정확히 반영하고 liveness와 구분된다.
-- 운영 runbook, dashboard 지표, backup/restore와 rollback 절차가 재현 가능하다.
-
-## 12. 이후 작업 순서
-
-### Phase 10 — Issue #10
-
-- request/job/model/stage 구조화 로그와 민감정보 redaction
-- metrics/trace, health/readiness, queue/worker/storage 지표
-- temp/intermediate/input/output 보존기간 cleanup
-- Voice Profile 및 사용자 전체 데이터 삭제
-- storage failure retry와 orphan reconciliation
-- 인증/인가, rate limit, 감사 로그, 암호화, abuse report/watermark 확장점
-- 운영 runbook, backup/restore, deploy/rollback
-- GitHub Actions Node/runtime major version 갱신
-
-### 실제 모델 acceptance — Issue #11
-
-Phase 8의 ModelManager/Worker image 경계가 준비된 뒤 진행하는 편이 안전하다.
-
-- 후보의 코드와 weights 라이선스를 각각 출처와 함께 기록
-- 한국어 고정 corpus로 발음·화자 유사도·긴 문장 안정성 평가
-- GPU별 peak VRAM, load time, RTF 기록
-- Mock과 실제 adapter에 같은 contract suite 적용
-- 무거운 dependency는 Worker image에만 추가
+외부 모델 조사에는 최신 정보가 필요하므로 공식 출처를 다시 확인한다. 다운로드 전에 license와 파일 크기, 저장 위치를 검토한다. 대형 weights를 Git에 commit하지 않는다.
 
 ## 13. 알려진 기술 부채와 함정
 
-- Mock TTS는 tone WAV, Mock VC/SVC는 gain 변환, Mock separation은 sample 비율 분할이다. 품질 검증용 모델이 아니다.
-- `inference_worker.py`의 mode dispatch와 lifecycle 분기가 커졌으므로 다음 backend 기능 확장 시 executor 분리를 검토한다.
-- ModelManager의 실제 VRAM 수치는 아직 실제 adapter metadata와 GPU runner 측정이 없다. Mock 테스트 결과를 실제 GPU 검증으로 오인하지 않는다.
-- TTS/VC/Singing checkpoint는 진행 metadata를 영속화하지만 chunk 오디오 재개 manifest까지 구현하지 않았다.
-- 입력 업로드의 원본·정제본 보존기간과 DB 추적은 Phase 10 과제다.
-- Voice Profile 삭제 후 과거 Job의 `voice_profile_id`는 `SET NULL`이므로 결과 provenance 보존 정책을 재검토해야 한다.
-- File upload copy logic이 voice/files route에 일부 중복된다. 공통 upload staging service 후보지만 작은 함수 하나를 위해 과도하게 추상화하지 않는다.
-- LocalObjectStorage는 개발 adapter다. S3/MinIO 도입 시 streaming put, multipart, retry, checksum, delete reconciliation을 구현한다.
-- 취소는 단계 경계에서 협력적으로 확인한다. 실제 긴 GPU kernel은 즉시 중단되지 않을 수 있다.
-- frontend는 `local-developer` identity를 하드코딩한다. 인증 도입 전 공개 배포 금지다.
-- profile builder의 실제 embedding/object 생성 시 파생 key를 삭제 경로에 반드시 등록한다.
-- 모델 후보 저장소가 archived이거나 GPL일 수 있다. process 분리는 라이선스 의무를 없애지 않는다.
+- `LocalObjectStorage`는 단일 host 개발 adapter다. S3/MinIO의 streaming multipart, checksum, retry, encryption은 없다.
+- Prometheus HTTP counter와 rate limiter는 process-local이다. 다중 replica는 scrape 합산과 ingress 분산 limit가 필요하다.
+- Readiness의 Redis ping은 broker reachability만 보여주며 Worker heartbeat 자체를 보장하지 않는다.
+- `inference_worker.py`가 mode dispatch와 lifecycle을 함께 가진다. 실제 adapter가 늘면 executor 분리를 검토하되 상태 전이/cleanup 규칙을 보존한다.
+- TTS/VC/Singing Mock은 품질 모델이 아니다. tone/gain/sample 분리 결과를 실제 음질 근거로 쓰지 않는다.
+- provenance metadata는 watermark가 아니다. provider가 연결되기 전 UI에서 watermark 적용으로 표시하지 않는다.
+- Abuse report는 port만 있고 접수 API/moderation queue가 없다.
+- Celery Beat는 replica를 하나만 실행한다. 여러 scheduler가 떠도 cleanup은 멱등이어야 하지만 불필요한 load가 생긴다.
+- 사용자 삭제와 실행 중 GPU kernel은 즉시 중단되지 않을 수 있다. Worker checkpoint가 cancel을 확인하고 생성 output을 삭제한다.
+- 기존 output의 null expiry는 cleanup 시 created_at 기반으로 처리한다.
+- 실제 인증 gateway는 repository에 포함되지 않는다. trusted proxy 설정만으로 public auth가 완성되는 것은 아니다.
 
-## 14. 관련 문서 읽기 순서
+## 14. 문서 읽기 순서
 
 1. 이 문서
 2. [README](../README.md)
-3. [아키텍처](architecture.md)
-4. 현재 Phase 관련 문서
-   - [Audio Pipeline](audio-pipeline.md)
-   - [Job System](job-system.md)
-   - [Voice Profile](voice-profiles.md)
-   - [TTS Pipeline](tts-pipeline.md)
-   - [Speech Voice Conversion](speech-voice-conversion.md)
-   - [Singing Voice Conversion](singing-voice-conversion.md)
-   - [GPU Model Manager](model-manager.md)
-   - [Voice Studio Job UX](studio-job-ux.md)
-5. [보안 원칙](security.md)
+3. 현재 작업 문서
+   - 운영: [operations.md](operations.md), [security.md](security.md)
+   - 실제 TTS: [tts-pipeline.md](tts-pipeline.md), [model-manager.md](model-manager.md)
+4. [architecture.md](architecture.md)
+5. 해당 코드와 테스트
 
-문서와 코드가 다르면 코드를 확인하고 같은 작업에서 문서를 바로 고친다.
+문서와 코드가 다르면 코드를 확인하고 같은 branch에서 둘을 일치시킨다.
 
-## 15. 매 작업 완료 체크리스트
+## 15. 완료 체크리스트
 
 - [ ] Issue 목적과 완료 조건을 충족했다.
-- [ ] 소유권·동의·민감정보 경계를 검토했다.
+- [ ] owner/동의/민감정보/삭제 경계를 테스트했다.
 - [ ] API process에 무거운 inference dependency를 넣지 않았다.
-- [ ] 실패·취소 시 해당 Job의 객체만 정리된다.
-- [ ] unit/API/integration test를 추가했다.
-- [ ] Ruff, mypy, pytest, frontend lint/build가 통과했다.
-- [ ] README와 관련 문서가 실제 코드와 일치한다.
-- [ ] 논리 단위의 한국어 commit을 만들었다.
-- [ ] feature branch CI의 backend/frontend/docker가 모두 성공했다.
-- [ ] `develop`에 `--no-ff` 병합하고 push했다.
-- [ ] `develop` CI 성공을 확인했다.
-- [ ] 검증 링크와 한계를 Issue 댓글에 기록하고 닫았다.
-- [ ] 작업 트리가 clean인지 확인했다.
-
-완료를 서두르기 위해 실제 모델 품질, 보안 또는 테스트 상태를 과장하지 않는다. 구현되지 않은 기능은 문서와 UI에서 명확히 비활성 또는 Mock으로 표시한다.
+- [ ] 실패·취소·retry에서 해당 Job/object만 정리된다.
+- [ ] migration upgrade와 backward-compatible application rollback을 검토했다.
+- [ ] Ruff, mypy, pytest, frontend lint/test/build가 통과했다.
+- [ ] README, 인수인계, 관련 설계·운영 문서를 갱신했다.
+- [ ] 논리 단위별 한국어 commit을 만들었다.
+- [ ] feature CI backend/frontend/docker가 모두 성공했다.
+- [ ] develop에 `--no-ff` merge하고 develop CI를 확인했다.
+- [ ] 검증 URL, commit, 알려진 한계를 Issue에 기록하고 닫았다.
+- [ ] 최종 worktree가 clean이다.
