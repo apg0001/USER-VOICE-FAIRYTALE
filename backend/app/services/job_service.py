@@ -39,6 +39,10 @@ class InvalidVoiceProfileError(JobServiceError):
     pass
 
 
+class InvalidInputFileError(JobServiceError):
+    pass
+
+
 TERMINAL_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
 ALLOWED_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
     JobStatus.QUEUED: {JobStatus.PREPROCESSING, JobStatus.FAILED, JobStatus.CANCELLED},
@@ -122,6 +126,15 @@ class JobService:
             )
             if profile is None or profile.status != "READY":
                 raise InvalidVoiceProfileError(command.voice_profile_id)
+
+        if command.mode in {
+            JobMode.SPEECH_VOICE_CONVERSION,
+            JobMode.SINGING_VOICE_CONVERSION,
+        } and (
+            not command.input_storage_key
+            or not command.input_storage_key.startswith(f"users/{user_id}/inputs/")
+        ):
+            raise InvalidInputFileError(command.input_storage_key or "")
 
         if idempotency_key:
             existing = await self.session.scalar(
