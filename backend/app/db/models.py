@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -86,6 +87,9 @@ class ModelRecord(UUIDTimestampMixin, Base):
 
 class Job(UUIDTimestampMixin, Base):
     __tablename__ = "jobs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_jobs_user_id_idempotency_key"),
+    )
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     voice_profile_id: Mapped[str | None] = mapped_column(
@@ -107,6 +111,13 @@ class Job(UUIDTimestampMixin, Base):
     input_storage_key: Mapped[str | None] = mapped_column(String(512))
     input_text: Mapped[str | None] = mapped_column(Text)
     model_key: Mapped[str] = mapped_column(String(120))
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    celery_task_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    retry_of_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL"), index=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     request_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     metrics: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     error_code: Mapped[str | None] = mapped_column(String(80))

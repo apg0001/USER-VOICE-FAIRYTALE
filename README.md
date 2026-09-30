@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 1 기반 구조**. Health/Model API, Mock inference 계약, DB migration, Voice Studio shell, Docker/CI가 구현되어 있습니다. 음성 업로드와 실제 추론 버튼은 후속 이슈가 완료될 때까지 의도적으로 비활성화되어 있습니다.
+> 현재 범위: **Phase 2 Job System**. 기반 구조와 함께 Job 생성·조회·취소·재시도, 상태 전이, Queue 위치, 단계 기반 진행률과 Mock Worker 실행이 구현되어 있습니다. 음성 업로드와 실제 모델 추론은 후속 이슈가 완료될 때까지 의도적으로 비활성화되어 있습니다.
 
 ## 주요 기능
 
@@ -48,6 +48,8 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  │  ├─ core/             # 환경 설정과 JSON logging
 │  │  ├─ db/               # SQLAlchemy model/session
 │  │  ├─ models/           # VoiceModel, Mock adapter, registry
+│  │  ├─ queue/            # Celery를 감싸는 JobQueue 계약
+│  │  ├─ services/         # Job 상태 전이와 application rule
 │  │  ├─ storage/          # ObjectStorage와 안전한 local adapter
 │  │  └─ workers/          # Celery app와 inference task 경계
 │  └─ tests/{api,unit}/     # GPU가 필요 없는 테스트
@@ -70,6 +72,8 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 - `backend/app/db/models.py`: users, profiles, samples, jobs, outputs, models
 - `backend/app/models/base.py`: 모든 AI adapter가 지켜야 하는 lifecycle 계약
 - `backend/app/models/registry.py`: 모델 key/capability별 동적 선택
+- `backend/app/services/job_service.py`: 멱등 생성, 상태 전이, 취소·재시도, ETA
+- `backend/app/queue/`: API 테스트와 Celery를 분리하는 Queue port/adapter
 - `backend/app/storage/local.py`: UUID key와 경로 순회 방어를 갖춘 개발 저장소
 - `backend/app/workers/inference_worker.py`: API와 inference 프로세스의 경계
 - `frontend/src/App.tsx`: 현재 Phase를 정직하게 표시하는 Studio UI
@@ -100,19 +104,23 @@ Registry는 구체 라이브러리 대신 stable model key와 capability를 노�
 | GET | `/api/health` | 구현 | process liveness와 version |
 | GET | `/api/models` | 구현 | capability별 등록 모델 |
 | POST/GET | `/api/voices` | Phase 4 | Voice Profile 등록·조회 |
-| POST/GET | `/api/jobs` | Phase 2 | 작업 생성·조회 |
-| POST | `/api/jobs/{id}/cancel` | Phase 2 | cooperative cancel |
+| POST/GET | `/api/jobs` | 구현 | 멱등 작업 생성·목록 |
+| GET | `/api/jobs/{id}` | 구현 | 소유자 범위 상태·진행률 조회 |
+| POST | `/api/jobs/{id}/cancel` | 구현 | cooperative cancel |
+| POST | `/api/jobs/{id}/retry` | 구현 | 실패·취소 작업 재시도 |
 | GET | `/api/files/{id}` | Phase 3/5 | 권한 검사 후 결과 stream |
 
 아직 구현되지 않은 endpoint를 빈 성공 응답으로 제공하지 않습니다.
 
 ## AI Worker
 
-Celery Worker는 API와 별도 프로세스입니다. Phase 1의 `voice.run_inference`는 모델 lifecycle 계약을 검증하는 Mock task이며 실제 오디오를 생성하지 않습니다. 실제 adapter의 대용량 PyTorch/CUDA 의존성은 향후 별도 Worker image에만 설치합니다.
+Celery Worker는 API와 별도 프로세스입니다. `voice.run_inference`는 DB에서 Job을 읽고 각 단계 상태를 commit하며 Mock 모델 lifecycle을 끝까지 실행합니다. 실제 오디오를 생성하지 않으며 대용량 PyTorch/CUDA 의존성은 향후 별도 Worker image에만 설치합니다.
 
 ## Queue
 
 Redis는 broker이고 PostgreSQL의 `jobs`가 영속 상태의 기준입니다. 기본 Worker 설정은 late ack, prefetch 1, concurrency 1입니다. 상태는 `QUEUED → PREPROCESSING → LOADING_MODEL → INFERENCE → POSTPROCESSING → COMPLETED`이며 어느 단계에서든 `FAILED` 또는 협력적 `CANCELLED`로 종료할 수 있습니다.
+
+생성 요청은 `Idempotency-Key`로 중복 dispatch를 차단합니다. 진행률은 상태별 허용 범위 안에서 단조 증가해야 하며 ETA는 동일 model/mode/GPU 실행 이력이 3개 이상일 때만 계산합니다. 상세 계약은 [Job System 문서](docs/job-system.md)에 있습니다.
 
 ## GPU / CUDA
 
@@ -204,6 +212,11 @@ npm run build
 ```bash
 curl http://localhost:8000/api/health
 curl "http://localhost:8000/api/models?capability=general_tts"
+curl -X POST http://localhost:8000/api/jobs \
+  -H "Content-Type: application/json" \
+  -H "X-User-ID: local-developer" \
+  -H "Idempotency-Key: example-request-0001" \
+  -d '{"mode":"general_tts","model_key":"mock-universal-v1","input_text":"안녕하세요"}'
 ```
 
 모든 응답에는 추적 가능한 `X-Request-ID`가 포함됩니다. 사용자 오류와 내부 debug 정보는 후속 API에서 분리하며 원본 민감 데이터는 로그에 기록하지 않습니다.
@@ -211,7 +224,7 @@ curl "http://localhost:8000/api/models?capability=general_tts"
 ## 개발 단계
 
 - [x] Phase 1: repository, API/UI/DB/Docker/문서/CI 기반
-- [ ] Phase 2: Job 생성, 상태 전이, Queue, 진행률, 취소, retry
+- [x] Phase 2: Job 생성, 상태 전이, Queue, 진행률, 취소, retry
 - [ ] Phase 3: 미디어 검증, ffmpeg, VAD/normalize/denoise
 - [ ] Phase 4: 동의 기반 Voice Profile
 - [ ] Phase 5: 일반/장문 TTS

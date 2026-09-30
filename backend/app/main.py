@@ -9,22 +9,33 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.db.session import create_session_factory
 from app.models import build_model_registry
+from app.queue import CeleryJobQueue, JobQueue
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    job_queue: JobQueue | None = None,
+) -> FastAPI:
     runtime_settings = settings or get_settings()
     configure_logging(runtime_settings.log_level)
     log = structlog.get_logger(__name__)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        engine, session_factory = create_session_factory(runtime_settings.database_url)
         app.state.settings = runtime_settings
+        app.state.engine = engine
+        app.state.session_factory = session_factory
         app.state.model_registry = build_model_registry(
             include_mock=runtime_settings.use_mock_inference
         )
+        app.state.job_queue = job_queue or CeleryJobQueue()
         log.info("api_started", environment=runtime_settings.app_env)
         yield
+        await engine.dispose()
         log.info("api_stopped")
 
     app = FastAPI(
