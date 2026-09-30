@@ -30,8 +30,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     storage_path: Path = Path("./storage")
     model_path: Path = Path("./models")
+    ffmpeg_path: str = "ffmpeg"
+    ffprobe_path: str = "ffprobe"
     cuda_device: str = "cuda:0"
     max_upload_size: int = 500 * 1024 * 1024
+    max_audio_duration_seconds: int = 3600
     model_cache_limit: int = 1
     use_mock_inference: bool = True
     temp_retention_hours: int = 24
