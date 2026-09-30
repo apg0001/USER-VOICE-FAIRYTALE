@@ -1,6 +1,7 @@
 import asyncio
 import os
 import tempfile
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, BinaryIO
 
@@ -25,7 +26,13 @@ class InputFileResponse(BaseModel):
     input_storage_key: str
     duration_seconds: float
     sample_rate: int
+    channels: int
     quality: dict[str, object]
+
+
+class InputAudioKind(StrEnum):
+    SPEECH = "speech"
+    SINGING = "singing"
 
 
 def _copy_upload(source: BinaryIO, destination: Path, max_bytes: int) -> None:
@@ -45,6 +52,7 @@ async def upload_job_input(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     audio_file: Annotated[UploadFile, File()],
     noise_reduction: Annotated[NoiseReduction, Form()] = NoiseReduction.NORMAL,
+    input_kind: Annotated[InputAudioKind, Form()] = InputAudioKind.SPEECH,
 ) -> InputFileResponse:
     user = await resolve_user(session, actor_id, create=True)
     assert user is not None
@@ -58,17 +66,29 @@ async def upload_job_input(
             temp_path,
             request.app.state.settings.max_upload_size,
         )
+        preprocessing = (
+            PreprocessingConfig(
+                target_sample_rate=44_100,
+                target_channels=2,
+                trim_silence=False,
+                normalize_loudness=False,
+                noise_reduction=noise_reduction,
+            )
+            if input_kind == InputAudioKind.SINGING
+            else PreprocessingConfig(noise_reduction=noise_reduction)
+        )
         artifact = await request.app.state.file_service.ingest_audio(
             temp_path,
             original_filename=audio_file.filename or "",
             content_type=audio_file.content_type or "application/octet-stream",
             namespace=f"users/{user.id}/inputs",
-            config=PreprocessingConfig(noise_reduction=noise_reduction),
+            config=preprocessing,
         )
         return InputFileResponse(
             input_storage_key=artifact.cleaned_storage_key,
             duration_seconds=artifact.probe.duration_seconds,
             sample_rate=artifact.preprocessing.target_sample_rate,
+            channels=artifact.preprocessing.target_channels,
             quality=artifact.quality.to_dict(),
         )
     except AudioValidationError as error:
