@@ -7,17 +7,24 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.audio.ffmpeg import FFmpegMediaTool
+from app.audio.preprocessing import AudioPreprocessingPipeline
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import create_session_factory
 from app.models import build_model_registry
+from app.profiles import ProfileBuilderRegistry, build_profile_builder_registry
 from app.queue import CeleryJobQueue, JobQueue
+from app.services.file_service import FileService
+from app.storage import LocalObjectStorage
 
 
 def create_app(
     settings: Settings | None = None,
     *,
     job_queue: JobQueue | None = None,
+    file_service: FileService | None = None,
+    profile_builder_registry: ProfileBuilderRegistry | None = None,
 ) -> FastAPI:
     runtime_settings = settings or get_settings()
     configure_logging(runtime_settings.log_level)
@@ -31,6 +38,21 @@ def create_app(
         app.state.session_factory = session_factory
         app.state.model_registry = build_model_registry(
             include_mock=runtime_settings.use_mock_inference
+        )
+        app.state.profile_builder_registry = (
+            profile_builder_registry
+            or build_profile_builder_registry(include_mock=runtime_settings.use_mock_inference)
+        )
+        app.state.file_service = file_service or FileService(
+            LocalObjectStorage(runtime_settings.storage_path),
+            AudioPreprocessingPipeline(
+                FFmpegMediaTool(
+                    ffmpeg_path=runtime_settings.ffmpeg_path,
+                    ffprobe_path=runtime_settings.ffprobe_path,
+                )
+            ),
+            max_upload_size=runtime_settings.max_upload_size,
+            max_duration_seconds=runtime_settings.max_audio_duration_seconds,
         )
         app.state.job_queue = job_queue or CeleryJobQueue()
         log.info("api_started", environment=runtime_settings.app_env)
@@ -50,7 +72,13 @@ def create_app(
         allow_origins=runtime_settings.frontend_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-Request-ID",
+            "X-User-ID",
+        ],
     )
 
     @app.middleware("http")
