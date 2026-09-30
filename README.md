@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 8 GPU Model Manager**. 모든 추론 mode가 lease 기반 lazy load/LRU cache를 사용하며 VRAM admission, CUDA OOM 격리·cache 복구, Worker device 진단과 성능 metadata가 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
+> 현재 범위: **Phase 9 Voice Studio Job UX**. 소유자 전용 SSE 진행률과 reconnect cursor/heartbeat, polling fallback, 작업 이력·Queue/ETA, 취소·재시도, 인증된 결과 재생·다운로드가 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
 
 ## 주요 기능
 
@@ -68,6 +68,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  ├─ speech-voice-conversion.md # 발화 변환과 보존 속성 계약
 │  ├─ singing-voice-conversion.md # 보컬 분리·SVC·재합성 계약
 │  ├─ model-manager.md      # GPU 진단, model lease/LRU/OOM 복구 계약
+│  ├─ studio-job-ux.md      # SSE와 Voice Studio 작업 UX 계약
 │  └─ security.md          # 동의·업로드·삭제 원칙
 ├─ docker-compose.yml      # CPU/Mock 개발 stack
 ├─ docker-compose.gpu.yml  # NVIDIA device override
@@ -101,7 +102,10 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 - `backend/app/workers/inference_worker.py`: API와 inference 프로세스의 경계
 - `backend/app/workers/model_runtime.py`: Worker process 범위 ModelManager singleton
 - `backend/app/workers/gpu_check.py`: 실제 GPU runner 사전 점검 명령
-- `frontend/src/App.tsx`: 현재 Phase를 정직하게 표시하는 Studio UI
+- `backend/app/api/jobs/events.py`: 짧은 DB session을 사용하는 소유자 전용 SSE
+- `frontend/src/App.tsx`: Voice Studio orchestration과 작업 생성
+- `frontend/src/jobMonitor.ts`: SSE parser/reconnect와 polling fallback
+- `frontend/src/JobHistory.tsx`: 작업 상태·제어·audio player UI
 
 파일이나 책임이 바뀌면 이 목록과 `docs/architecture.md`를 같은 commit에서 갱신합니다.
 
@@ -136,6 +140,7 @@ Registry는 구체 라이브러리 대신 stable model key와 capability를 노�
 | POST | `/api/files/inputs` | 구현 | 소유자 namespace 입력 검증·전처리; `speech`/`singing` preset |
 | POST/GET | `/api/jobs` | 구현 | 멱등 작업 생성·목록 |
 | GET | `/api/jobs/{id}` | 구현 | 소유자 범위 상태·진행률 조회 |
+| GET | `/api/jobs/{id}/events` | 구현 | cursor·heartbeat를 포함한 소유자 전용 SSE |
 | POST | `/api/jobs/{id}/cancel` | 구현 | cooperative cancel |
 | POST | `/api/jobs/{id}/retry` | 구현 | 실패·취소 작업 재시도 |
 | GET | `/api/files/{id}` | 구현 | Job 소유권 검사 후 WAV 결과 stream |
@@ -205,6 +210,8 @@ cd frontend && npm ci
 | `MAX_UPLOAD_SIZE` | 500 MiB | 서버측 상한 |
 | `MODEL_CACHE_LIMIT` | 2 | Worker에 동시에 유지할 모델 수; Singing은 최소 2 필요 |
 | `GPU_VRAM_RESERVE_MB` | 512 | model admission 후 남겨 둘 VRAM 안전 여유 |
+| `SSE_POLL_INTERVAL_SECONDS` | 1 | SSE가 DB 상태를 다시 읽는 간격 |
+| `SSE_HEARTBEAT_SECONDS` | 15 | proxy idle timeout 방지 heartbeat 간격 |
 | `USE_MOCK_INFERENCE` | `true` | 개발/CI model registry |
 | `TEMP_RETENTION_HOURS` | 24 | 디버그 임시 파일 최대 보존 |
 | `VOICE_CONSENT_VERSION` | `2026-09-01` | 등록 시 요구하는 동의문 버전 |
@@ -237,6 +244,7 @@ python -m pytest
 
 cd ../frontend
 npm run lint
+npm test
 npm run build
 ```
 
@@ -267,7 +275,7 @@ curl -X POST http://localhost:8000/api/jobs \
 - [x] Phase 6: Speech VC
 - [x] Phase 7: Source Separation + Singing VC + Mixing
 - [x] Phase 8: ModelManager/GPU/OOM
-- [ ] Phase 9: SSE/ETA/Queue/History UX
+- [x] Phase 9: SSE/ETA/Queue/History UX
 - [ ] Phase 10: logging/monitoring/cleanup/security/deploy
 
 ## Development Workflow
@@ -291,7 +299,7 @@ curl -X POST http://localhost:8000/api/jobs \
 
 ## CI/CD
 
-GitHub Actions는 push/PR에서 backend Ruff·mypy·pytest, frontend ESLint·TypeScript build, Docker build를 검증합니다. GPU inference는 일반 CI에서 실행하지 않고 Mock 계약 테스트와 별도 GPU runner 검증으로 분리합니다.
+GitHub Actions는 push/PR에서 backend Ruff·mypy·pytest, frontend ESLint·Vitest·TypeScript build, Docker build를 검증합니다. GPU inference는 일반 CI에서 실행하지 않고 Mock 계약 테스트와 별도 GPU runner 검증으로 분리합니다.
 
 ## Security
 

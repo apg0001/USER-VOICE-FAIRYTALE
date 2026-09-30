@@ -6,12 +6,12 @@
 
 - 저장소: <https://github.com/apg0001/USER-VOICE-FAIRYTALE>
 - 기준 브랜치: `develop`
-- Phase 8 직전 `develop` commit: `276be50`; 정확한 최신 commit은 `git rev-parse HEAD`로 확인
-- 완료된 Phase: 1–8
-- 다음 제품 Phase: [#9 작업 진행률과 Voice Studio UX](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/9)
+- Phase 9 직전 `develop` commit: `76c8c28`; 정확한 최신 commit은 `git rev-parse HEAD`로 확인
+- 완료된 Phase: 1–9
+- 다음 제품 Phase: [#10 운영 안정성·보안·정리 정책](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/10)
 - 별도 모델 검증: [#11 실제 한국어 TTS 모델 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
 - 현재 inference는 모두 계약 검증용 Mock이다. 실제 사람의 음색을 생성한다고 주장하면 안 된다.
-- Phase 8 로컬 기준 검증: Ruff/mypy 통과, pytest 46 passed·2 skipped, coverage 82%, frontend lint/build 통과
+- Phase 9 로컬 기준 검증: Ruff/mypy 통과, pytest 48 passed·2 skipped, coverage 82%, frontend 6 tests·lint/build 통과
 - 최근 `develop` CI는 `gh run list --branch develop --limit 3`으로 확인
 
 작업 시작 직후 다음을 다시 확인한다. 이 문서의 숫자보다 Git과 GitHub 상태가 우선한다.
@@ -54,13 +54,15 @@ FastAPI는 요청·소유권·metadata를 담당하고, 무거운 inference는 C
 - Worker process 범위 model lease, lazy load, cache hit와 idle LRU eviction
 - GPU availability/VRAM admission, CUDA OOM 격리와 다음 Job 복구 계약
 - model cache/device/load/eviction/OOM recovery Job metrics와 GPU 점검 명령
+- 소유자 전용 Job SSE, reconnect cursor, heartbeat와 terminal 종료
+- Studio SSE 우선/polling fallback, 작업 이력, 취소·재시도, Queue/ETA
+- 인증 header 기반 blob audio player/download와 frontend Vitest 계약
 - Job 결과 metadata와 소유자 전용 다운로드
 - Studio의 Voice Profile 등록, TTS/Speech/Singing 입력·생성·polling/download
 
 아직 구현되지 않은 실제 동작:
 
 - 실제 TTS/VC/SVC/분리 모델과 GPU dependency
-- SSE, 작업 이력·플레이어·완전한 취소/재시도 UX
 - 인증 공급자, 저장 암호화, 감사 로그, rate limit, watermark/abuse 대응
 - 입력 원본·정제본의 보존기간 cleanup과 사용자 전체 삭제
 
@@ -101,6 +103,7 @@ GitHub Actions의 Node.js 20 deprecation 및 향후 `ubuntu-latest` 이미지 �
 backend/app/
 ├─ api/
 │  ├─ jobs/                 # Job 생성·조회·취소·재시도 schema/routes
+│  │  └─ events.py          # 짧은 session 기반 소유자 전용 SSE
 │  ├─ voices/               # 동의, Voice Profile 등록·조회·삭제
 │  ├─ files.py              # 입력 업로드와 결과 다운로드
 │  └─ models.py             # capability별 모델 descriptor
@@ -138,7 +141,7 @@ backend/app/
 
 `inference_worker.py`가 Phase 5–8 mode 분기와 lifecycle 처리를 함께 가진다. 다음 backend 확장 시 mode executor/dispatcher 분리를 검토하되 기존 상태 전이·결과 정리·lease 규칙을 보존한다.
 
-Frontend의 단일 주요 화면은 `frontend/src/App.tsx`다. Phase 9 전까지 과도한 상태관리 library를 추가하지 않는다.
+Frontend는 `App.tsx` orchestration, `jobMonitor.ts` transport, `JobHistory.tsx` 표시/제어로 분리되어 있다. 별도 전역 상태 library는 아직 필요하지 않다.
 
 ## 6. 데이터와 소유권 계약
 
@@ -187,7 +190,7 @@ OpenAPI는 실행 후 `http://localhost:8000/api/docs`에서 확인한다.
 - `CUDA_DEVICE`
 - `MAX_UPLOAD_SIZE`, `MAX_AUDIO_DURATION_SECONDS`
 - `VOICE_CONSENT_VERSION`, `MIN_VOICE_PROFILE_SPEECH_SECONDS`
-- `MODEL_CACHE_LIMIT`, `GPU_VRAM_RESERVE_MB`, `USE_MOCK_INFERENCE`, `TEMP_RETENTION_HOURS`
+- `MODEL_CACHE_LIMIT`, `GPU_VRAM_RESERVE_MB`, `SSE_POLL_INTERVAL_SECONDS`, `SSE_HEARTBEAT_SECONDS`, `USE_MOCK_INFERENCE`, `TEMP_RETENTION_HOURS`
 
 환경값을 새로 추가하면 두 파일과 README 환경 변수 표를 함께 갱신한다. 실제 `.env`나 secret은 commit하지 않는다.
 
@@ -208,6 +211,7 @@ Frontend:
 cd frontend
 npm ci
 npm run lint
+npm test
 npm run build
 ```
 
@@ -234,68 +238,60 @@ docker compose up
 ```powershell
 git switch develop
 git pull --ff-only origin develop
-git switch -c "feat/#9-studio-job-ux"
+git switch -c "feat/#10-operations-security"
 ```
 
 구현 후 논리 단위로 커밋한다.
 
 ```text
-[feat] Job 진행 SSE와 reconnect 계약 구현
-[feat] Voice Studio 작업 이력과 제어 UX 구현
-[test] 진행률 재연결과 주요 사용자 흐름 검증
-[docs] Job UX와 fallback 운영 계약 문서화
+[feat] 구조화 관측성과 readiness 구현
+[feat] 보존기간 cleanup과 전체 데이터 삭제 구현
+[test] 삭제 복구와 보안 경계 검증
+[docs] 운영 runbook과 위협 모델 문서화
 ```
 
 그 다음:
 
 ```powershell
-git push -u origin "feat/#9-studio-job-ux"
-gh run list --branch "feat/#9-studio-job-ux" --limit 3
+git push -u origin "feat/#10-operations-security"
+gh run list --branch "feat/#10-operations-security" --limit 3
 gh run watch RUN_ID --exit-status
 git switch develop
 git pull --ff-only origin develop
-git merge --no-ff "feat/#9-studio-job-ux" -m "[feat] Voice Studio Job UX를 develop에 병합"
+git merge --no-ff "feat/#10-operations-security" -m "[feat] 운영 안정성과 보안 정책을 develop에 병합"
 git push origin develop
 ```
 
 `develop` CI가 성공한 뒤에만 상세 검증 댓글과 함께 Issue를 닫는다. `main`에는 직접 병합하지 않는다.
 
-## 11. 다음 작업: Phase 9 권장 구현 순서
+## 11. 다음 작업: Phase 10 권장 구현 순서
 
-Issue: [#9](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/9)
-Branch: `feat/#9-studio-job-ux`
+Issue: [#10](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/10)
+Branch: `feat/#10-operations-security`
 
 권장 순서:
 
-1. 현재 Job 조회/목록/취소/retry schema와 소유권 검사를 재사용한다.
-2. `backend/app/api/jobs/events.py`에 소유자 범위 SSE endpoint를 추가한다.
-3. event ID/cursor, heartbeat, terminal event와 disconnect 정리를 정의한다.
-4. DB polling 기반 SSE라도 connection당 무한 session/transaction을 잡지 않게 한다.
-5. Frontend API/state를 component에서 분리하고 SSE 우선, timeout/error 시 polling fallback을 유지한다.
-6. 작업 이력에 status, progress, queue position, 근거가 있을 때만 ETA를 표시한다.
-7. 진행 중 취소와 실패/취소 retry를 연결하고 멱등/중복 클릭을 방어한다.
-8. 결과는 인증 header를 포함한 blob fetch 후 audio player와 download로 제공한다.
-9. 빈 상태, API 오류, SSE 재연결, terminal 상태, keyboard/focus/label 접근성을 구현한다.
-10. Backend SSE 소유권/terminal/heartbeat test와 Frontend 주요 흐름 test를 추가한다.
+1. 위협 모델과 데이터 inventory에서 원본/정제본/profile 파생물/input/output/temp의 owner와 보존기간을 확정한다.
+2. request/job/model/stage correlation이 가능한 구조화 로그와 민감정보 redaction filter를 만든다.
+3. liveness와 DB/Redis/storage/Worker 의존성을 확인하는 readiness를 분리한다.
+4. Prometheus 호환 request/job/queue/model/OOM/cleanup 지표와 trace 확장점을 추가한다.
+5. upload metadata를 DB에서 추적하고 보존기간 기반 cleanup service를 idempotent하게 구현한다.
+6. storage 삭제 실패를 재시도 가능한 상태로 남기고 orphan reconciliation을 구현한다.
+7. Voice Profile 삭제와 별도로 사용자 전체 Job/output/input/profile 데이터 삭제 흐름을 구현한다.
+8. 인증 token subject, rate limit, audit event, 저장 암호화 경계를 인터페이스와 배포 설정에 반영한다.
+9. abuse report/watermark/provenance 확장점을 실제 품질을 과장하지 않는 형태로 둔다.
+10. backup/restore, deploy/rollback, incident/OOM/storage 장애 runbook과 검증 스크립트를 작성한다.
+11. GitHub Actions runtime 경고를 해소하고 보안/삭제/복구 테스트를 CI에 포함한다.
 
-Phase 9 완료 조건:
+Phase 10 완료 조건:
 
-- 다른 사용자의 Job event/history가 노출되지 않는다.
-- SSE disconnect/reconnect와 polling fallback이 중복 상태 갱신 없이 동작한다.
-- 생성→진행→완료→재생/다운로드, 취소, retry 흐름이 검증된다.
-- ETA가 근거 없을 때 숨겨지고 Queue 위치/오류 안내가 명확하다.
-- 키보드만으로 주요 작업을 수행할 수 있다.
+- 보존기간 cleanup과 사용자 전체 삭제가 다른 사용자의 object를 건드리지 않는다.
+- storage 실패 후 재시도/reconciliation으로 수렴한다.
+- 로그/metric/trace에 음성 byte, 원문, token, secret, 절대 사용자 경로가 없다.
+- readiness가 의존성 장애를 정확히 반영하고 liveness와 구분된다.
+- 운영 runbook, dashboard 지표, backup/restore와 rollback 절차가 재현 가능하다.
 
 ## 12. 이후 작업 순서
-
-### Phase 9 — Issue #9
-
-- SSE endpoint와 reconnect cursor/heartbeat
-- polling fallback 유지
-- 작업 이력, 취소, 재시도, Queue 위치, ETA
-- audio player와 인증된 blob download
-- 빈 상태·오류·재연결·접근성 frontend test
-- 현재 `App.tsx`의 1초 polling loop와 단일 컴포넌트 상태를 정리
 
 ### Phase 10 — Issue #10
 
@@ -346,6 +342,7 @@ Phase 8의 ModelManager/Worker image 경계가 준비된 뒤 진행하는 편이
    - [Speech Voice Conversion](speech-voice-conversion.md)
    - [Singing Voice Conversion](singing-voice-conversion.md)
    - [GPU Model Manager](model-manager.md)
+   - [Voice Studio Job UX](studio-job-ux.md)
 5. [보안 원칙](security.md)
 
 문서와 코드가 다르면 코드를 확인하고 같은 작업에서 문서를 바로 고친다.

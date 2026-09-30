@@ -137,7 +137,7 @@ CUDA OOM은 해당 Job을 `FAILED(GPU_OUT_OF_MEMORY)`로 기록하고 adapter �
 6. Speech VC — Mock 계약 구현 완료
 7. Source separation, Singing VC, mixing — Mock 계약 구현 완료
 8. GPU ModelManager와 OOM recovery — CPU Mock 계약 구현 완료
-9. SSE/ETA/Queue/History UX
+9. SSE/ETA/Queue/History UX — 구현 완료
 10. 관측성, 정리, 보안, 배포/rollback
 
 ## 11. Phase별 GitHub Issue
