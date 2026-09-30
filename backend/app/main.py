@@ -76,6 +76,7 @@ def create_app(
             "Authorization",
             "Content-Type",
             "Idempotency-Key",
+            "Last-Event-ID",
             "X-Request-ID",
             "X-User-ID",
         ],
