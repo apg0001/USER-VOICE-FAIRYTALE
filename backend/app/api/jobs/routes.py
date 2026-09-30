@@ -1,11 +1,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_actor_id
-from app.api.jobs.schemas import JobCreateRequest, JobListResponse, JobResponse
-from app.db.models import Job, JobStatus
+from app.api.jobs.schemas import JobCreateRequest, JobListResponse, JobOutputResponse, JobResponse
+from app.db.models import Job, JobOutput, JobStatus
 from app.db.session import get_db_session
 from app.models.base import ModelCapability
 from app.queue import JobQueue
@@ -41,9 +42,21 @@ def get_job_service(request: Request, session: AsyncSession) -> JobService:
 
 
 async def serialize_job(service: JobService, job: Job) -> JobResponse:
-    response = JobResponse.model_validate(job)
+    response = JobResponse.model_validate({**job.__dict__, "outputs": []})
     response.queue_position = await service.queue_position(job)
     response.user_message = ERROR_MESSAGES.get(job.error_code or "")
+    outputs = list(
+        await service.session.scalars(select(JobOutput).where(JobOutput.job_id == job.id))
+    )
+    response.outputs = [
+        JobOutputResponse(
+            id=output.id,
+            content_type=output.content_type,
+            duration_seconds=output.duration_seconds,
+            download_url=f"/api/files/{output.id}",
+        )
+        for output in outputs
+    ]
     return response
 
 
