@@ -21,9 +21,18 @@ button, textarea, select { font: inherit; }
 .step-number { font: 400 17px Georgia, 'Times New Roman', serif; color: #c3a35f; padding-right: 18px; border-right: 1px solid #ffffff1c; }
 .label { margin: 0 0 4px; }
 h2 { font: 400 24px Georgia, 'Times New Roman', serif; margin: 0; }
-.upload-button { margin-left: auto; padding: 14px 20px; border: 1px solid #c3a35f; color: #c3a35f; background: transparent; cursor: not-allowed; opacity: .72; }
+.upload-button { margin-left: auto; max-width: 320px; padding: 14px 20px; border: 1px solid #c3a35f; color: #c3a35f; background: transparent; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .upload-button span { margin-right: 7px; }
 .consent-note, .phase-note { color: #77736c; font-size: 12px; margin: 18px 0 0 66px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.profile-form { display: grid; gap: 10px; margin: 20px 0 0 66px; padding: 18px; border: 1px solid #ffffff12; background: #151412; }
+.profile-form > input { padding: 11px; color: #e6e1d7; border: 1px solid #ffffff1c; background: #11100f; }
+.profile-form label { color: #aaa59b; font-size: 12px; }
+.profile-form label input { accent-color: #c3a35f; margin-right: 7px; }
+.profile-form button { justify-self: start; padding: 11px 16px; border: 1px solid #c3a35f; color: #c3a35f; background: transparent; cursor: pointer; }
+.profile-form button:disabled { opacity: .4; cursor: not-allowed; }
+.profile-success { color: #78b687; }
+.profile-error { color: #d27a72; }
 .divider { border-top: 1px solid #ffffff12; margin: 38px 0; }
 .mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }
 .mode-card { position: relative; min-height: 145px; padding: 22px; text-align: left; color: #dfdbd2; border: 1px solid #ffffff17; background: #151412; cursor: pointer; transition: .2s ease; }
@@ -46,5 +55,5 @@ select { max-width: 180px; padding: 9px; color: #c9c3b8; border: 1px solid #ffff
 .start-button { width: 100%; display: flex; justify-content: space-between; margin-top: 26px; padding: 18px 22px; color: #16130d; border: 0; background: #c3a35f; font-weight: 600; opacity: .55; cursor: not-allowed; }
 .phase-note { margin: 10px 0 0; text-align: center; }
 footer { display: flex; justify-content: space-between; padding: 42px 0 50px; color: #5f5b54; font-size: 10px; letter-spacing: .12em; }
-@media (max-width: 720px) { .hero { padding-top: 65px; } .mode-grid, .options { grid-template-columns: 1fr; } .step-row { align-items: flex-start; flex-wrap: wrap; } .upload-button { width: 100%; margin-left: 0; } .consent-note { margin-left: 0; } footer { gap: 16px; flex-direction: column; } }
+@media (max-width: 720px) { .hero { padding-top: 65px; } .mode-grid, .options { grid-template-columns: 1fr; } .step-row { align-items: flex-start; flex-wrap: wrap; } .upload-button { width: 100%; margin-left: 0; } .consent-note, .profile-form { margin-left: 0; } footer { gap: 16px; flex-direction: column; } }
 
