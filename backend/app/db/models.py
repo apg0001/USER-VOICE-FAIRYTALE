@@ -1,5 +1,5 @@
-import enum
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, UUIDTimestampMixin
 
 
-class JobStatus(str, enum.Enum):
+class JobStatus(StrEnum):
     QUEUED = "QUEUED"
     PREPROCESSING = "PREPROCESSING"
     LOADING_MODEL = "LOADING_MODEL"
@@ -29,7 +29,7 @@ class JobStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
-class JobMode(str, enum.Enum):
+class JobMode(StrEnum):
     GENERAL_TTS = "general_tts"
     LONG_FORM_TTS = "long_form_tts"
     SPEECH_VOICE_CONVERSION = "speech_voice_conversion"
