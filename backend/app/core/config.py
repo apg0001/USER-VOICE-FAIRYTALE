@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     max_audio_duration_seconds: int = 3600
     voice_consent_version: str = "2026-09-01"
     min_voice_profile_speech_seconds: float = 10.0
-    model_cache_limit: int = 1
+    model_cache_limit: int = Field(default=2, ge=1)
+    gpu_vram_reserve_mb: int = Field(default=512, ge=0)
     use_mock_inference: bool = True
     temp_retention_hours: int = 24
 
