@@ -19,6 +19,12 @@ function App() {
   const [mode, setMode] = useState<StudioMode>('general_tts')
   const [models, setModels] = useState<ModelInfo[]>([])
   const [apiStatus, setApiStatus] = useState<'checking' | 'ready' | 'offline'>('checking')
+  const [voiceFile, setVoiceFile] = useState<File | null>(null)
+  const [profileName, setProfileName] = useState('내 이야기 목소리')
+  const [consentAccepted, setConsentAccepted] = useState(false)
+  const [ownershipDeclared, setOwnershipDeclared] = useState(false)
+  const [consentVersion, setConsentVersion] = useState('')
+  const [profileState, setProfileState] = useState<'idle' | 'uploading' | 'ready' | 'error'>('idle')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -31,9 +37,14 @@ function App() {
         if (!response.ok) throw new Error('Models unavailable')
         return response.json() as Promise<{ items: ModelInfo[] }>
       }),
+      fetch('/api/voices/consent', { signal: controller.signal }).then((response) => {
+        if (!response.ok) throw new Error('Consent unavailable')
+        return response.json() as Promise<{ version: string }>
+      }),
     ])
-      .then(([, modelPayload]) => {
+      .then(([, modelPayload, consentPayload]) => {
         setModels(modelPayload.items)
+        setConsentVersion(consentPayload.version)
         setApiStatus('ready')
       })
       .catch((error: unknown) => {
@@ -44,6 +55,29 @@ function App() {
   }, [])
 
   const isTextMode = mode === 'general_tts'
+
+  const registerVoice = async () => {
+    if (!voiceFile || !consentAccepted || !ownershipDeclared || !profileName.trim()) return
+    setProfileState('uploading')
+    const form = new FormData()
+    form.append('name', profileName.trim())
+    form.append('consent_accepted', 'true')
+    form.append('owns_voice_or_has_permission', 'true')
+    form.append('consent_version', consentVersion)
+    form.append('noise_reduction', 'normal')
+    form.append('voice_sample', voiceFile)
+    try {
+      const response = await fetch('/api/voices', {
+        method: 'POST',
+        headers: { 'X-User-ID': 'local-developer' },
+        body: form,
+      })
+      if (!response.ok) throw new Error('voice profile upload failed')
+      setProfileState('ready')
+    } catch {
+      setProfileState('error')
+    }
+  }
 
   return (
     <main className="shell">
@@ -68,11 +102,20 @@ function App() {
         <div className="step-row">
           <span className="step-number">01</span>
           <div><p className="label">VOICE PROFILE</p><h2>내 음성 등록</h2></div>
-          <button className="upload-button" type="button" disabled title="Phase 4에서 활성화됩니다">
-            <span>＋</span> 음성 샘플 선택
-          </button>
+          <label className="upload-button">
+            <span>＋</span> {voiceFile ? voiceFile.name : '음성 샘플 선택'}
+            <input className="visually-hidden" type="file" accept=".wav,.mp3,.m4a,.flac,audio/*" onChange={(event) => setVoiceFile(event.target.files?.[0] ?? null)} />
+          </label>
         </div>
         <p className="consent-note">본인이 소유하거나 명시적 사용 권한을 받은 음성만 등록할 수 있습니다.</p>
+        <div className="profile-form">
+          <input aria-label="음성 프로필 이름" value={profileName} maxLength={120} onChange={(event) => setProfileName(event.target.value)} />
+          <label><input type="checkbox" checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} /> 음성 처리 및 Voice Profile 생성에 동의합니다.</label>
+          <label><input type="checkbox" checked={ownershipDeclared} onChange={(event) => setOwnershipDeclared(event.target.checked)} /> 본인의 음성이거나 명시적 사용 권한이 있습니다.</label>
+          <button type="button" onClick={registerVoice} disabled={!voiceFile || !consentAccepted || !ownershipDeclared || !consentVersion || profileState === 'uploading'}>{profileState === 'uploading' ? '검증 및 등록 중…' : 'Voice Profile 등록'}</button>
+          {profileState === 'ready' && <small className="profile-success">음성 품질 검증과 등록이 완료되었습니다.</small>}
+          {profileState === 'error' && <small className="profile-error">등록하지 못했습니다. 파일 품질과 서버 상태를 확인해 주세요.</small>}
+        </div>
 
         <div className="divider" />
 

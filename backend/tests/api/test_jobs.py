@@ -1,5 +1,11 @@
+import asyncio
+from datetime import UTC, datetime
+
 from conftest import RecordingQueue
 from fastapi.testclient import TestClient
+
+from app.db.models import VoiceProfile
+from app.services.user_service import resolve_user
 
 HEADERS = {"X-User-ID": "user-alice", "Idempotency-Key": "request-00000001"}
 PAYLOAD = {
@@ -66,4 +72,42 @@ def test_job_input_and_model_are_validated(job_client: TestClient) -> None:
 
     assert missing_text.status_code == 422
     assert wrong_model.status_code == 422
+
+
+def test_job_rejects_another_users_or_unready_voice_profile(
+    job_client: TestClient,
+) -> None:
+    async def seed_profile(owner: str, status: str) -> str:
+        async with job_client.app.state.session_factory() as session:
+            user = await resolve_user(session, owner, create=True)
+            assert user is not None
+            profile = VoiceProfile(
+                user_id=user.id,
+                name=f"{owner} voice",
+                status=status,
+                consent_version="2026-09-01",
+                consented_at=datetime.now(UTC),
+                profile_metadata={},
+            )
+            session.add(profile)
+            await session.commit()
+            await session.refresh(profile)
+            return profile.id
+
+    other_users_profile_id = asyncio.run(seed_profile("user-bob", "READY"))
+    unready_profile_id = asyncio.run(seed_profile("user-alice", "PROCESSING"))
+
+    other_users_profile = job_client.post(
+        "/api/jobs",
+        headers={**HEADERS, "Idempotency-Key": "request-00000002"},
+        json={**PAYLOAD, "voice_profile_id": other_users_profile_id},
+    )
+    unready_profile = job_client.post(
+        "/api/jobs",
+        headers={**HEADERS, "Idempotency-Key": "request-00000003"},
+        json={**PAYLOAD, "voice_profile_id": unready_profile_id},
+    )
+
+    assert other_users_profile.status_code == 422
+    assert unready_profile.status_code == 422
 

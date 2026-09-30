@@ -8,8 +8,9 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Job, JobMode, JobStatus, User
+from app.db.models import Job, JobMode, JobStatus, VoiceProfile
 from app.queue import JobQueue
+from app.services.user_service import resolve_user
 
 
 class JobServiceError(Exception):
@@ -32,6 +33,10 @@ class QueueUnavailableError(JobServiceError):
     def __init__(self, job_id: str) -> None:
         self.job_id = job_id
         super().__init__(f"queue dispatch failed for job {job_id}")
+
+
+class InvalidVoiceProfileError(JobServiceError):
+    pass
 
 
 TERMINAL_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
@@ -97,22 +102,6 @@ class JobService:
         self.session = session
         self.queue = queue
 
-    async def _resolve_user(self, external_id: str, *, create: bool) -> User | None:
-        user = await self.session.scalar(select(User).where(User.external_id == external_id))
-        if user is None and create:
-            user = User(external_id=external_id, is_active=True)
-            self.session.add(user)
-            try:
-                await self.session.flush()
-            except IntegrityError:
-                await self.session.rollback()
-                user = await self.session.scalar(
-                    select(User).where(User.external_id == external_id)
-                )
-                if user is None:
-                    raise
-        return user
-
     async def create_job(
         self,
         external_user_id: str,
@@ -120,9 +109,19 @@ class JobService:
         *,
         idempotency_key: str | None,
     ) -> tuple[Job, bool]:
-        user = await self._resolve_user(external_user_id, create=True)
+        user = await resolve_user(self.session, external_user_id, create=True)
         assert user is not None
         user_id = user.id
+
+        if command.voice_profile_id:
+            profile = await self.session.scalar(
+                select(VoiceProfile).where(
+                    VoiceProfile.id == command.voice_profile_id,
+                    VoiceProfile.user_id == user_id,
+                )
+            )
+            if profile is None or profile.status != "READY":
+                raise InvalidVoiceProfileError(command.voice_profile_id)
 
         if idempotency_key:
             existing = await self.session.scalar(
@@ -185,7 +184,7 @@ class JobService:
         return job, True
 
     async def get_owned_job(self, external_user_id: str, job_id: str) -> Job:
-        user = await self._resolve_user(external_user_id, create=False)
+        user = await resolve_user(self.session, external_user_id, create=False)
         if user is None:
             raise JobNotFoundError(job_id)
         job = await self.session.scalar(
@@ -212,7 +211,7 @@ class JobService:
         limit: int,
         offset: int,
     ) -> JobPage:
-        user = await self._resolve_user(external_user_id, create=False)
+        user = await resolve_user(self.session, external_user_id, create=False)
         if user is None:
             return JobPage(items=[], total=0)
         filters = [Job.user_id == user.id]

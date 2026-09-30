@@ -7,7 +7,8 @@ Voice Fairy Tale은 음성과 파생 speaker embedding을 민감한 사용자 �
 - 사용자는 등록 음성이 본인의 음성이거나 명시적 사용 권한이 있음을 확인해야 한다.
 - 동의 문구 버전과 동의 시각을 `voice_profiles`에 기록한다.
 - 타인을 사칭하거나 동의 없이 제3자의 음성을 복제하는 사용을 금지한다.
-- 실제 Voice Profile 생성 API는 동의 필드를 필수로 검증해야 한다.
+- Voice Profile 생성 API는 현재 동의 버전과 권한 선언을 오디오 처리 전에 필수로 검증한다.
+- 구현된 등록·조회·삭제 계약은 [Voice Profile 문서](voice-profiles.md)를 따른다.
 
 ## 업로드 방어
 
@@ -20,7 +21,7 @@ Voice Fairy Tale은 음성과 파생 speaker embedding을 민감한 사용자 �
 
 - 원본, 정제본, embedding, 중간 파일, 결과 파일을 구분하여 추적한다.
 - 임시 파일은 Job 종료 후 즉시, 디버그 보관본은 설정된 기간 후 삭제한다.
-- Voice Profile 또는 사용자 전체 삭제 시 모든 파생 객체와 메타데이터를 연쇄 삭제한다.
+- Voice Profile 삭제 시 먼저 `DELETION_PENDING`을 기록하고 원본·정제본·샘플 metadata·프로필을 연쇄 삭제한다. 저장소 삭제 실패 시 metadata를 남겨 재시도한다.
 - 로그에는 토큰, 비밀번호, 원본 텍스트 전문, 음성 바이트, 로컬 절대 경로를 남기지 않는다.
 
 ## 향후 통제

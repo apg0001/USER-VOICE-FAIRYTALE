@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 3 Audio Pipeline**. Job System과 함께 미디어 형식 검증, ffprobe 검사, 품질 측정, 선택적 denoise/trim/normalization, 모델용 mono PCM WAV 변환이 구현되어 있습니다. 업로드 API와 실제 모델 추론은 후속 이슈에서 연결합니다.
+> 현재 범위: **Phase 4 Voice Profile**. 미디어 검증·전처리 위에 버전이 지정된 동의, 소유권 격리, 원본·정제본 추적, 모델별 profile builder, 조회·삭제 API와 등록 UI가 구현되어 있습니다. 실제 모델 추론은 후속 이슈에서 연결합니다.
 
 ## 주요 기능
 
@@ -49,6 +49,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  │  ├─ core/             # 환경 설정과 JSON logging
 │  │  ├─ db/               # SQLAlchemy model/session
 │  │  ├─ models/           # VoiceModel, Mock adapter, registry
+│  │  ├─ profiles/         # 모델별 Voice Profile builder와 registry
 │  │  ├─ queue/            # Celery를 감싸는 JobQueue 계약
 │  │  ├─ services/         # Job 상태 전이와 application rule
 │  │  ├─ storage/          # ObjectStorage와 안전한 local adapter
@@ -60,6 +61,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  └─ Dockerfile
 ├─ docs/
 │  ├─ architecture.md      # 12개 초기 설계 산출물
+│  ├─ voice-profiles.md     # 동의, 소유권, 저장·삭제 수명주기
 │  └─ security.md          # 동의·업로드·삭제 원칙
 ├─ docker-compose.yml      # CPU/Mock 개발 stack
 ├─ docker-compose.gpu.yml  # NVIDIA device override
@@ -73,7 +75,9 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 - `backend/app/db/models.py`: users, profiles, samples, jobs, outputs, models
 - `backend/app/models/base.py`: 모든 AI adapter가 지켜야 하는 lifecycle 계약
 - `backend/app/models/registry.py`: 모델 key/capability별 동적 선택
+- `backend/app/profiles/registry.py`: 모델별 Voice Profile builder 선택과 실행
 - `backend/app/services/job_service.py`: 멱등 생성, 상태 전이, 취소·재시도, ETA
+- `backend/app/services/voice_service.py`: 동의 우선 검증, 등록·소유권·삭제 수명주기
 - `backend/app/services/file_service.py`: 원본/정제본을 분리하는 안전한 ingest orchestration
 - `backend/app/audio/ffmpeg.py`: shell을 사용하지 않는 ffprobe/ffmpeg 실행과 품질 분석
 - `backend/app/queue/`: API 테스트와 Celery를 분리하는 Queue port/adapter
@@ -106,7 +110,9 @@ Registry는 구체 라이브러리 대신 stable model key와 capability를 노�
 |---|---|---|---|
 | GET | `/api/health` | 구현 | process liveness와 version |
 | GET | `/api/models` | 구현 | capability별 등록 모델 |
-| POST/GET | `/api/voices` | Phase 4 | Voice Profile 등록·조회 |
+| GET | `/api/voices/consent` | 구현 | 현재 동의문과 버전 |
+| POST/GET | `/api/voices` | 구현 | 동의 기반 Voice Profile 등록·목록 |
+| GET/DELETE | `/api/voices/{id}` | 구현 | 소유자 범위 조회·추적 삭제 |
 | POST/GET | `/api/jobs` | 구현 | 멱등 작업 생성·목록 |
 | GET | `/api/jobs/{id}` | 구현 | 소유자 범위 상태·진행률 조회 |
 | POST | `/api/jobs/{id}/cancel` | 구현 | cooperative cancel |
@@ -177,6 +183,8 @@ cd frontend && npm ci
 | `MODEL_CACHE_LIMIT` | 1 | 동시에 유지할 모델 수 |
 | `USE_MOCK_INFERENCE` | `true` | 개발/CI model registry |
 | `TEMP_RETENTION_HOURS` | 24 | 디버그 임시 파일 최대 보존 |
+| `VOICE_CONSENT_VERSION` | `2026-09-01` | 등록 시 요구하는 동의문 버전 |
+| `MIN_VOICE_PROFILE_SPEECH_SECONDS` | 10 | 프로필 생성에 필요한 유효 발화 길이 |
 
 전체 값은 [.env.example](.env.example)에 있습니다. 실제 `.env`는 commit하지 않습니다.
 
@@ -215,6 +223,7 @@ npm run build
 ```bash
 curl http://localhost:8000/api/health
 curl "http://localhost:8000/api/models?capability=general_tts"
+curl http://localhost:8000/api/voices/consent
 curl -X POST http://localhost:8000/api/jobs \
   -H "Content-Type: application/json" \
   -H "X-User-ID: local-developer" \
@@ -229,7 +238,7 @@ curl -X POST http://localhost:8000/api/jobs \
 - [x] Phase 1: repository, API/UI/DB/Docker/문서/CI 기반
 - [x] Phase 2: Job 생성, 상태 전이, Queue, 진행률, 취소, retry
 - [x] Phase 3: 미디어 검증, ffmpeg, VAD/normalize/denoise
-- [ ] Phase 4: 동의 기반 Voice Profile
+- [x] Phase 4: 동의 기반 Voice Profile
 - [ ] Phase 5: 일반/장문 TTS
 - [ ] Phase 6: Speech VC
 - [ ] Phase 7: Source Separation + Singing VC + Mixing
@@ -262,7 +271,7 @@ GitHub Actions는 push/PR에서 backend Ruff·mypy·pytest, frontend ESLint·Typ
 
 ## Security
 
-Voice Cloning은 명시적 권한이 있는 음성만 허용합니다. 동의 없이는 Profile을 생성하지 않으며 원본/파생 데이터의 추적 삭제, UUID storage key, MIME/컨테이너 검증, 제한된 media probe, 민감 로그 차단을 적용합니다. 상세 원칙과 운영 전 필수 통제는 [보안 문서](docs/security.md)에 있습니다.
+Voice Cloning은 명시적 권한이 있는 음성만 허용합니다. 동의 없이는 Profile을 생성하지 않으며 원본/파생 데이터의 추적 삭제, UUID storage key, MIME/컨테이너 검증, 제한된 media probe, 민감 로그 차단을 적용합니다. 구현 계약은 [Voice Profile 문서](docs/voice-profiles.md), 운영 전 필수 통제는 [보안 문서](docs/security.md)에 있습니다.
 
 ## Troubleshooting
 

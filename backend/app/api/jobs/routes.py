@@ -12,6 +12,7 @@ from app.queue import JobQueue
 from app.services.job_service import (
     CreateJobCommand,
     InvalidJobTransitionError,
+    InvalidVoiceProfileError,
     JobNotFoundError,
     JobNotRetryableError,
     JobService,
@@ -78,6 +79,11 @@ async def create_job(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "QUEUE_UNAVAILABLE", "job_id": error.job_id},
+        ) from error
+    except InvalidVoiceProfileError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="사용 가능한 본인 음성 프로필을 선택해 주세요.",
         ) from error
     return await serialize_job(service, job)
 

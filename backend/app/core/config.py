@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     cuda_device: str = "cuda:0"
     max_upload_size: int = 500 * 1024 * 1024
     max_audio_duration_seconds: int = 3600
+    voice_consent_version: str = "2026-09-01"
+    min_voice_profile_speech_seconds: float = 10.0
     model_cache_limit: int = 1
     use_mock_inference: bool = True
     temp_retention_hours: int = 24
