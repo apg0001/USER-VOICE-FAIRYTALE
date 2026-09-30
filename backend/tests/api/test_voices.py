@@ -161,3 +161,53 @@ def test_outdated_consent_version_is_rejected(
     )
     assert response.status_code == 422
 
+
+def test_speech_input_is_scoped_to_uploader(
+    voice_app: tuple[TestClient, StubFileService],
+) -> None:
+    client, _ = voice_app
+    profile = client.post(
+        "/api/voices",
+        headers={"X-User-ID": "voice-owner"},
+        data=profile_form(),
+        files={"voice_sample": ("voice.wav", b"RIFF0000WAVEaudio", "audio/wav")},
+    ).json()
+    uploaded = client.post(
+        "/api/files/inputs",
+        headers={"X-User-ID": "voice-owner"},
+        data={"noise_reduction": "normal"},
+        files={"audio_file": ("speech.wav", b"RIFF0000WAVEaudio", "audio/wav")},
+    )
+    other_profile = client.post(
+        "/api/voices",
+        headers={"X-User-ID": "different-user"},
+        data=profile_form(),
+        files={"voice_sample": ("other.wav", b"RIFF0000WAVEaudio", "audio/wav")},
+    ).json()
+
+    assert uploaded.status_code == 201
+    input_key = uploaded.json()["input_storage_key"]
+    accepted = client.post(
+        "/api/jobs",
+        headers={"X-User-ID": "voice-owner", "Idempotency-Key": "speech-input-owner"},
+        json={
+            "mode": "speech_voice_conversion",
+            "model_key": "mock-universal-v1",
+            "voice_profile_id": profile["id"],
+            "input_storage_key": input_key,
+        },
+    )
+    stolen = client.post(
+        "/api/jobs",
+        headers={"X-User-ID": "different-user", "Idempotency-Key": "speech-input-other"},
+        json={
+            "mode": "speech_voice_conversion",
+            "model_key": "mock-universal-v1",
+            "voice_profile_id": other_profile["id"],
+            "input_storage_key": input_key,
+        },
+    )
+
+    assert accepted.status_code == 202
+    assert stolen.status_code == 422
+
