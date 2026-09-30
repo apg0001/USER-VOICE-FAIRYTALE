@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 7 Singing Voice Conversion**. 일반·장문 TTS와 Speech VC에 더해 음악 입력의 보컬/반주 분리, 보컬 음색 변환, loudness 정렬·clipping 방지 재합성이 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
+> 현재 범위: **Phase 8 GPU Model Manager**. 모든 추론 mode가 lease 기반 lazy load/LRU cache를 사용하며 VRAM admission, CUDA OOM 격리·cache 복구, Worker device 진단과 성능 metadata가 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
 
 ## 주요 기능
 
@@ -46,7 +46,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  ├─ app/
 │  │  ├─ api/              # FastAPI route와 response schema
 │  │  ├─ audio/            # magic 검증, ffmpeg adapter, 전처리 pipeline
-│  │  ├─ core/             # 환경 설정과 JSON logging
+│  │  ├─ core/             # 환경 설정, JSON logging, lazy GPU 진단
 │  │  ├─ db/               # SQLAlchemy model/session
 │  │  ├─ models/           # VoiceModel, Mock adapter, registry
 │  │  ├─ pipelines/        # TTS 등 작업 유형별 orchestration
@@ -67,6 +67,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  ├─ tts-pipeline.md       # 일반·장문 TTS와 결과 다운로드 계약
 │  ├─ speech-voice-conversion.md # 발화 변환과 보존 속성 계약
 │  ├─ singing-voice-conversion.md # 보컬 분리·SVC·재합성 계약
+│  ├─ model-manager.md      # GPU 진단, model lease/LRU/OOM 복구 계약
 │  └─ security.md          # 동의·업로드·삭제 원칙
 ├─ docker-compose.yml      # CPU/Mock 개발 stack
 ├─ docker-compose.gpu.yml  # NVIDIA device override
@@ -77,9 +78,11 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 
 - `backend/app/main.py`: application factory, CORS, request ID, lifecycle
 - `backend/app/core/config.py`: 환경 변수의 단일 typed source
+- `backend/app/core/gpu.py`: PyTorch를 지연 import하는 CUDA/VRAM 진단 port
 - `backend/app/db/models.py`: users, profiles, samples, jobs, outputs, models
 - `backend/app/models/base.py`: 모든 AI adapter가 지켜야 하는 lifecycle 계약
 - `backend/app/models/registry.py`: 모델 key/capability별 동적 선택
+- `backend/app/models/manager.py`: model lease, lifecycle lock, LRU와 VRAM admission
 - `backend/app/models/tts/`: TTS 전용 adapter 계약, registry, Mock WAV 모델
 - `backend/app/models/voice_conversion/`: Speech VC adapter 계약과 Mock 모델
 - `backend/app/models/separation/`: 보컬/반주 분리 adapter 계약과 Mock 모델
@@ -96,6 +99,8 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 - `backend/app/queue/`: API 테스트와 Celery를 분리하는 Queue port/adapter
 - `backend/app/storage/local.py`: UUID key와 경로 순회 방어를 갖춘 개발 저장소
 - `backend/app/workers/inference_worker.py`: API와 inference 프로세스의 경계
+- `backend/app/workers/model_runtime.py`: Worker process 범위 ModelManager singleton
+- `backend/app/workers/gpu_check.py`: 실제 GPU runner 사전 점검 명령
 - `frontend/src/App.tsx`: 현재 Phase를 정직하게 표시하는 Studio UI
 
 파일이나 책임이 바뀌면 이 목록과 `docs/architecture.md`를 같은 commit에서 갱신합니다.
@@ -155,7 +160,9 @@ Redis는 broker이고 PostgreSQL의 `jobs`가 영속 상태의 기준입니다. 
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
-실제 모델 adapter가 아직 없으므로 `USE_MOCK_INFERENCE=false`는 현재 모델 목록을 비웁니다. Phase 8에서 시작 시 CUDA/GPU/VRAM/version 진단, admission control, lazy loading/LRU unload, OOM 격리와 cache 정리를 구현합니다.
+Worker 시작 시 Mock mode는 PyTorch를 import하지 않고 device 설정만 기록합니다. 실제 inference mode는 CUDA availability, device name, total/free VRAM, PyTorch/CUDA version을 진단합니다. ModelManager는 model lease가 해제된 idle entry만 LRU eviction하며, CUDA OOM이면 현재 Job을 `CUDA_OOM`으로 실패시키고 전체 idle cache, Python GC, CUDA cache를 정리합니다. 자세한 계약과 실제 GPU 검증 절차는 [Model Manager 문서](docs/model-manager.md)에 있습니다.
+
+실제 모델 adapter가 아직 없으므로 `USE_MOCK_INFERENCE=false`는 현재 모델 목록을 비웁니다. GPU override만 실행했다고 실제 모델 품질이나 OOM 복구가 검증된 것은 아닙니다.
 
 ## Docker
 
@@ -196,7 +203,8 @@ cd frontend && npm ci
 | `MODEL_PATH` | `./models` | 모델 cache root |
 | `CUDA_DEVICE` | `cuda:0` | Worker device |
 | `MAX_UPLOAD_SIZE` | 500 MiB | 서버측 상한 |
-| `MODEL_CACHE_LIMIT` | 1 | 동시에 유지할 모델 수 |
+| `MODEL_CACHE_LIMIT` | 2 | Worker에 동시에 유지할 모델 수; Singing은 최소 2 필요 |
+| `GPU_VRAM_RESERVE_MB` | 512 | model admission 후 남겨 둘 VRAM 안전 여유 |
 | `USE_MOCK_INFERENCE` | `true` | 개발/CI model registry |
 | `TEMP_RETENTION_HOURS` | 24 | 디버그 임시 파일 최대 보존 |
 | `VOICE_CONSENT_VERSION` | `2026-09-01` | 등록 시 요구하는 동의문 버전 |
@@ -258,7 +266,7 @@ curl -X POST http://localhost:8000/api/jobs \
 - [x] Phase 5: 일반/장문 TTS
 - [x] Phase 6: Speech VC
 - [x] Phase 7: Source Separation + Singing VC + Mixing
-- [ ] Phase 8: ModelManager/GPU/OOM
+- [x] Phase 8: ModelManager/GPU/OOM
 - [ ] Phase 9: SSE/ETA/Queue/History UX
 - [ ] Phase 10: logging/monitoring/cleanup/security/deploy
 
