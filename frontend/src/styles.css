@@ -52,7 +52,9 @@ textarea:focus { border-color: #c3a35f; }
 .options strong, .options small { display: block; }
 .options small { color: #76726a; margin-top: 4px; }
 select { max-width: 180px; padding: 9px; color: #c9c3b8; border: 1px solid #ffffff18; background: #11100f; }
-.start-button { width: 100%; display: flex; justify-content: space-between; margin-top: 26px; padding: 18px 22px; color: #16130d; border: 0; background: #c3a35f; font-weight: 600; opacity: .55; cursor: not-allowed; }
+.start-button { width: 100%; display: flex; justify-content: space-between; margin-top: 26px; padding: 18px 22px; color: #16130d; border: 0; background: #c3a35f; font-weight: 600; cursor: pointer; }
+.start-button:disabled { opacity: .55; cursor: not-allowed; }
+.download-button { width: 100%; margin-top: 12px; padding: 14px; color: #c3a35f; border: 1px solid #c3a35f; background: transparent; cursor: pointer; }
 .phase-note { margin: 10px 0 0; text-align: center; }
 footer { display: flex; justify-content: space-between; padding: 42px 0 50px; color: #5f5b54; font-size: 10px; letter-spacing: .12em; }
 @media (max-width: 720px) { .hero { padding-top: 65px; } .mode-grid, .options { grid-template-columns: 1fr; } .step-row { align-items: flex-start; flex-wrap: wrap; } .upload-button { width: 100%; margin-left: 0; } .consent-note, .profile-form { margin-left: 0; } footer { gap: 16px; flex-direction: column; } }
