@@ -59,7 +59,7 @@ function App() {
       </header>
 
       <section className="hero" id="studio">
-        <p className="kicker">VOICE AI STUDIO · FOUNDATION</p>
+        <p className="kicker">VOICE AI STUDIO · JOB SYSTEM</p>
         <h1>당신의 목소리로,<br /><em>새로운 이야기를.</em></h1>
         <p className="hero-copy">한 번의 음성 등록으로 낭독, 대화, 노래까지.<br />작업에 맞는 모델을 안전하게 연결하는 Voice AI 플랫폼입니다.</p>
       </section>
@@ -105,7 +105,7 @@ function App() {
         <button className="start-button" type="button" disabled>
           작업 시작 <span>→</span>
         </button>
-        <p className="phase-note">Job 생성 기능은 Phase 2에서 활성화됩니다.</p>
+        <p className="phase-note">실제 음성 파일 생성은 모델 Pipeline 구현 후 활성화됩니다.</p>
       </section>
 
       <footer><span>VOICE FAIRY TALE</span><span>Responsible voice, thoughtfully made.</span></footer>

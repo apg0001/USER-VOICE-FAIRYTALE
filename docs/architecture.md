@@ -130,7 +130,7 @@ CUDA OOM은 해당 Job을 `FAILED(GPU_OUT_OF_MEMORY)`로 기록하고 adapter �
 ## 10. 개발 Phase
 
 1. 기반 구조/문서/CI/Mock 계약
-2. Job API, Queue, Worker 상태 전이/취소/재시도
+2. Job API, Queue, Worker 상태 전이/취소/재시도 — 구현 완료
 3. 안전한 오디오 검증과 선택적 전처리
 4. 동의 기반 Voice Profile과 모델별 profile builder
 5. 일반/장문 TTS와 결과 다운로드
