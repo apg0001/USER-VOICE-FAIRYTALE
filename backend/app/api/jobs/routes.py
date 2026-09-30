@@ -12,6 +12,7 @@ from app.models.base import ModelCapability
 from app.queue import JobQueue
 from app.services.job_service import (
     CreateJobCommand,
+    InvalidInputFileError,
     InvalidJobTransitionError,
     InvalidVoiceProfileError,
     JobNotFoundError,
@@ -97,6 +98,11 @@ async def create_job(
         raise HTTPException(
             status_code=422,
             detail="사용 가능한 본인 음성 프로필을 선택해 주세요.",
+        ) from error
+    except InvalidInputFileError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="본인이 업로드한 입력 음성을 선택해 주세요.",
         ) from error
     return await serialize_job(service, job)
 

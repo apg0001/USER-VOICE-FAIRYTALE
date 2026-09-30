@@ -11,7 +11,11 @@ from app.db.session import create_session_factory
 from app.models import build_model_registry
 from app.models.base import VoiceModel
 from app.models.tts import TTSModel, build_tts_model_registry
-from app.pipelines import TTSPipeline
+from app.models.voice_conversion import (
+    VoiceConversionModel,
+    build_voice_conversion_registry,
+)
+from app.pipelines import TTSPipeline, VoiceConversionPipeline
 from app.queue import CeleryJobQueue
 from app.services.job_service import InvalidJobTransitionError, JobService
 from app.storage import LocalObjectStorage
@@ -42,11 +46,17 @@ async def execute_job(job_id: str) -> dict[str, str]:
 
             await service.transition(job_id, JobStatus.LOADING_MODEL, progress=30)
             is_tts = job.mode in {JobMode.GENERAL_TTS, JobMode.LONG_FORM_TTS}
+            is_speech_vc = job.mode == JobMode.SPEECH_VOICE_CONVERSION
             if is_tts:
                 tts_registry = build_tts_model_registry(
                     include_mock=settings.use_mock_inference
                 )
                 model = tts_registry.create(job.model_key)
+            elif is_speech_vc:
+                conversion_registry = build_voice_conversion_registry(
+                    include_mock=settings.use_mock_inference
+                )
+                model = conversion_registry.create(job.model_key)
             else:
                 registry = build_model_registry(include_mock=settings.use_mock_inference)
                 model = registry.create(job.model_key)
@@ -108,6 +118,62 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     "chunk_count": result.chunk_count,
                     "sample_rate": result.sample_rate,
                 }
+            elif is_speech_vc:
+                if not job.voice_profile_id or not job.input_storage_key:
+                    raise ValueError("speech conversion input and voice profile required")
+                profile = await session.scalar(
+                    select(VoiceProfile).where(VoiceProfile.id == job.voice_profile_id)
+                )
+                if profile is None or profile.status != "READY":
+                    raise ValueError("ready voice profile required")
+                profile_data = profile.profile_metadata.get("model_profiles", {}).get(
+                    job.model_key, {}
+                )
+
+                async def conversion_checkpoint(completed: int, total: int) -> None:
+                    tracked = await service.get_job(job_id, for_update=True)
+                    tracked.progress = 40 + round(40 * completed / total)
+                    tracked.metrics = {
+                        **tracked.metrics,
+                        "conversion_checkpoint": {
+                            "completed": completed,
+                            "total": total,
+                        },
+                    }
+                    await session.commit()
+
+                conversion = await VoiceConversionPipeline(
+                    output_storage,
+                    max_duration_seconds=settings.max_audio_duration_seconds,
+                ).run(
+                    job_id=job.id,
+                    input_storage_key=job.input_storage_key,
+                    model=cast(VoiceConversionModel, model),
+                    voice_profile=profile_data,
+                    on_checkpoint=conversion_checkpoint,
+                )
+                session.add(
+                    JobOutput(
+                        job_id=job.id,
+                        storage_key=conversion.storage_key,
+                        content_type="audio/wav",
+                        duration_seconds=conversion.duration_seconds,
+                        output_metadata={
+                            "sample_rate": conversion.sample_rate,
+                            "chunk_count": conversion.chunk_count,
+                            "model": job.model_key,
+                            "preserved": ["duration", "sample_rate", "timing"],
+                        },
+                    )
+                )
+                generated_storage_key = conversion.storage_key
+                output_metadata = {
+                    "input_duration": conversion.duration_seconds,
+                    "output_duration": conversion.duration_seconds,
+                    "chunk_count": conversion.chunk_count,
+                    "sample_rate": conversion.sample_rate,
+                    "preserved": ["duration", "sample_rate", "timing"],
+                }
             else:
                 voice_model = cast(VoiceModel, model)
                 model_input = voice_model.preprocess(job.input_text or job.input_storage_key)
@@ -120,7 +186,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 return {"job_id": job_id, "status": JobStatus.CANCELLED.value}
             await service.transition(job_id, JobStatus.POSTPROCESSING, progress=85)
             post_started = time.monotonic()
-            if not is_tts:
+            if not is_tts and not is_speech_vc:
                 cast(VoiceModel, model).postprocess(output)
             postprocess_time = time.monotonic() - post_started
 
@@ -135,6 +201,15 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 **(
                     {"tts_checkpoint": tracked_job.metrics.get("tts_checkpoint")}
                     if is_tts
+                    else {}
+                ),
+                **(
+                    {
+                        "conversion_checkpoint": tracked_job.metrics.get(
+                            "conversion_checkpoint"
+                        )
+                    }
+                    if is_speech_vc
                     else {}
                 ),
                 **output_metadata,
