@@ -61,6 +61,7 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 │  ├─ nginx.conf           # SPA와 /api reverse proxy
 │  └─ Dockerfile
 ├─ docs/
+│  ├─ agent-handoff.md      # 후속 에이전트용 현재 상태와 실행 체크리스트
 │  ├─ architecture.md      # 12개 초기 설계 산출물
 │  ├─ voice-profiles.md     # 동의, 소유권, 저장·삭제 수명주기
 │  ├─ tts-pipeline.md       # 일반·장문 TTS와 결과 다운로드 계약
@@ -93,6 +94,8 @@ Upload → validate → resample/channel conversion → optional trim/normalize/
 - `frontend/src/App.tsx`: 현재 Phase를 정직하게 표시하는 Studio UI
 
 파일이나 책임이 바뀌면 이 목록과 `docs/architecture.md`를 같은 commit에서 갱신합니다.
+
+새 대화나 별도 에이전트가 개발을 이어갈 때는 먼저 [후속 에이전트 인수인계 문서](docs/agent-handoff.md)를 읽습니다.
 
 ## Model Architecture
 
