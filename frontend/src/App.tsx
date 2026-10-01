@@ -17,6 +17,7 @@ function App() {
   const [apiStatus, setApiStatus] = useState<'checking' | 'ready' | 'offline'>('checking')
   const [voiceFile, setVoiceFile] = useState<File | null>(null)
   const [profileName, setProfileName] = useState('내 이야기 목소리')
+  const [sampleTranscript, setSampleTranscript] = useState('')
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [ownershipDeclared, setOwnershipDeclared] = useState(false)
   const [consentVersion, setConsentVersion] = useState('')
@@ -110,6 +111,7 @@ function App() {
     form.append('owns_voice_or_has_permission', 'true')
     form.append('consent_version', consentVersion)
     form.append('noise_reduction', 'normal')
+    if (sampleTranscript.trim()) form.append('sample_transcript', sampleTranscript.trim())
     form.append('voice_sample', voiceFile)
     try {
       const response = await fetch('/api/voices', {
@@ -255,6 +257,7 @@ function App() {
         <p className="consent-note">본인이 소유하거나 명시적 사용 권한을 받은 음성만 등록할 수 있습니다.</p>
         <div className="profile-form">
           <input aria-label="음성 프로필 이름" value={profileName} maxLength={120} onChange={(event) => setProfileName(event.target.value)} />
+          <textarea aria-label="음성 샘플 원문" value={sampleTranscript} maxLength={1000} placeholder="녹음에서 읽은 문장을 입력하면 목소리 복제 품질이 좋아집니다 (선택)" onChange={(event) => setSampleTranscript(event.target.value)} />
           <label><input type="checkbox" checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} /> 음성 처리 및 Voice Profile 생성에 동의합니다.</label>
           <label><input type="checkbox" checked={ownershipDeclared} onChange={(event) => setOwnershipDeclared(event.target.checked)} /> 본인의 음성이거나 명시적 사용 권한이 있습니다.</label>
           <button type="button" onClick={registerVoice} disabled={!voiceFile || !consentAccepted || !ownershipDeclared || !consentVersion || profileState === 'uploading'}>{profileState === 'uploading' ? '검증 및 등록 중…' : 'Voice Profile 등록'}</button>
