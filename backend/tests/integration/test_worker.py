@@ -96,9 +96,7 @@ async def test_mock_worker_completes_persisted_job(
             consent_version="2026-09-01",
             consented_at=datetime.now(UTC),
             profile_metadata={
-                "model_profiles": {
-                    "mock-universal-v1": {"source_sha256": "worker-profile-sha"}
-                }
+                "model_profiles": {"mock-universal-v1": {"source_sha256": "worker-profile-sha"}}
             },
         )
         session.add(profile)
@@ -177,9 +175,7 @@ async def test_mock_worker_completes_singing_pipeline(
             consent_version="2026-09-01",
             consented_at=datetime.now(UTC),
             profile_metadata={
-                "model_profiles": {
-                    "mock-universal-v1": {"source_sha256": "singing-profile-sha"}
-                }
+                "model_profiles": {"mock-universal-v1": {"source_sha256": "singing-profile-sha"}}
             },
         )
         session.add(profile)
@@ -272,9 +268,7 @@ async def test_worker_recovers_from_inference_oom_and_runs_next_job(
             consent_version="2026-09-01",
             consented_at=datetime.now(UTC),
             profile_metadata={
-                "model_profiles": {
-                    "mock-universal-v1": {"source_sha256": "oom-profile-sha"}
-                }
+                "model_profiles": {"mock-universal-v1": {"source_sha256": "oom-profile-sha"}}
             },
         )
         session.add(profile)
@@ -319,7 +313,7 @@ async def test_worker_recovers_from_inference_oom_and_runs_next_job(
     )
     monkeypatch.setattr(
         "app.workers.inference_worker.build_tts_model_registry",
-        lambda include_mock: RecoveringTTSRegistry(),
+        lambda **_kwargs: RecoveringTTSRegistry(),
     )
     get_settings.cache_clear()
 
@@ -340,4 +334,3 @@ async def test_worker_recovers_from_inference_oom_and_runs_next_job(
         assert runtime.empty_cache_calls >= 1
     manager.shutdown()
     await engine.dispose()
-

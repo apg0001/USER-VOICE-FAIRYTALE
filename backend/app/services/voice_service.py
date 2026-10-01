@@ -57,6 +57,7 @@ class VoiceService:
         content_type: str,
         consent: VoiceConsent,
         preprocessing: PreprocessingConfig,
+        sample_transcript: str | None = None,
     ) -> VoiceProfile:
         if (
             not consent.accepted
@@ -96,7 +97,9 @@ class VoiceService:
             )
             if artifact.quality.speech_seconds < self.min_speech_seconds:
                 raise InsufficientVoiceError
-            model_profiles = await self.builder_registry.build_all(artifact)
+            model_profiles = await self.builder_registry.build_all(
+                artifact, sample_transcript=sample_transcript
+            )
             sample = VoiceSample(
                 voice_profile_id=profile.id,
                 original_storage_key=artifact.original_storage_key,
@@ -167,4 +170,3 @@ class VoiceService:
             await self.session.delete(sample)
         await self.session.delete(profile)
         await self.session.commit()
-

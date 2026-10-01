@@ -62,11 +62,15 @@ def create_app(
         app.state.engine = engine
         app.state.session_factory = session_factory
         app.state.model_registry = build_model_registry(
-            include_mock=runtime_settings.use_mock_inference
+            include_mock=runtime_settings.use_mock_inference,
+            include_cosyvoice3=runtime_settings.enable_cosyvoice3,
         )
         app.state.profile_builder_registry = (
             profile_builder_registry
-            or build_profile_builder_registry(include_mock=runtime_settings.use_mock_inference)
+            or build_profile_builder_registry(
+                include_mock=runtime_settings.use_mock_inference,
+                include_cosyvoice3=runtime_settings.enable_cosyvoice3,
+            )
         )
         app.state.file_service = file_service or FileService(
             LocalObjectStorage(runtime_settings.storage_path),
@@ -93,9 +97,7 @@ def create_app(
         docs_url="/api/docs",
     )
     app.state.metrics = MetricsRegistry()
-    app.state.rate_limiter = FixedWindowRateLimiter(
-        runtime_settings.rate_limit_requests_per_minute
-    )
+    app.state.rate_limiter = FixedWindowRateLimiter(runtime_settings.rate_limit_requests_per_minute)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=runtime_settings.frontend_origins,
@@ -151,9 +153,7 @@ def create_app(
             except Exception:
                 route = _route_template(request)
                 duration = time.monotonic() - started
-                request.app.state.metrics.observe_request(
-                    request.method, route, 500, duration
-                )
+                request.app.state.metrics.observe_request(request.method, route, 500, duration)
                 log.exception(
                     "http_request_failed",
                     method=request.method,
@@ -172,9 +172,7 @@ def create_app(
             route=route,
             status_code=response.status_code,
             duration_ms=round(duration * 1000, 3),
-            actor_hash=(
-                hashlib.sha256(identity.encode()).hexdigest()[:16] if identity else None
-            ),
+            actor_hash=(hashlib.sha256(identity.encode()).hexdigest()[:16] if identity else None),
         )
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Trace-ID"] = trace_id
@@ -188,4 +186,3 @@ def create_app(
 
 
 app = create_app()
-

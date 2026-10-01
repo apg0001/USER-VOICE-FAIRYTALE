@@ -11,9 +11,10 @@ class ProfileBuilderRegistry:
             raise ValueError(f"profile builder already registered: {builder.model_key}")
         self._builders[builder.model_key] = builder
 
-    async def build_all(self, artifact: AudioArtifact) -> dict[str, object]:
+    async def build_all(
+        self, artifact: AudioArtifact, *, sample_transcript: str | None = None
+    ) -> dict[str, object]:
         return {
-            model_key: await builder.build(artifact)
+            model_key: await builder.build(artifact, sample_transcript=sample_transcript)
             for model_key, builder in self._builders.items()
         }
-

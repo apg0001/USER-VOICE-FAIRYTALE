@@ -21,7 +21,13 @@ PAYLOAD = {
 }
 
 
-def seed_profile(job_client: TestClient, owner: str, status: str = "READY") -> str:
+def seed_profile(
+    job_client: TestClient,
+    owner: str,
+    status: str = "READY",
+    *,
+    include_mock_profile: bool = True,
+) -> str:
     async def create() -> str:
         async with job_client.app.state.session_factory() as session:
             user = await resolve_user(session, owner, create=True)
@@ -32,7 +38,13 @@ def seed_profile(job_client: TestClient, owner: str, status: str = "READY") -> s
                 status=status,
                 consent_version="2026-09-01",
                 consented_at=datetime.now(UTC),
-                profile_metadata={},
+                profile_metadata={
+                    "model_profiles": (
+                        {"mock-universal-v1": {"source_sha256": "a" * 64}}
+                        if include_mock_profile
+                        else {}
+                    )
+                },
             )
             session.add(profile)
             await session.commit()
@@ -60,17 +72,13 @@ def test_create_is_idempotent_and_owned(
     assert first.json()["queue_position"] == 1
     assert recording_queue.enqueued == [first.json()["id"]]
 
-    forbidden = job_client.get(
-        f"/api/jobs/{first.json()['id']}", headers={"X-User-ID": "user-bob"}
-    )
+    forbidden = job_client.get(f"/api/jobs/{first.json()['id']}", headers={"X-User-ID": "user-bob"})
     assert forbidden.status_code == 404
 
 
 def test_list_cancel_and_retry(job_client: TestClient, recording_queue: RecordingQueue) -> None:
     profile_id = seed_profile(job_client, "user-alice")
-    created = job_client.post(
-        "/api/jobs", headers=HEADERS, json=tts_payload(profile_id)
-    ).json()
+    created = job_client.post("/api/jobs", headers=HEADERS, json=tts_payload(profile_id)).json()
 
     listing = job_client.get("/api/jobs", headers={"X-User-ID": "user-alice"})
     assert listing.status_code == 200
@@ -140,13 +148,25 @@ def test_job_rejects_another_users_or_unready_voice_profile(
     assert unready_profile.status_code == 422
 
 
+def test_job_rejects_profile_without_selected_model_data(
+    job_client: TestClient,
+) -> None:
+    profile_id = seed_profile(job_client, "user-alice", include_mock_profile=False)
+
+    response = job_client.post(
+        "/api/jobs",
+        headers={**HEADERS, "Idempotency-Key": "request-model-profile-gap"},
+        json=tts_payload(profile_id),
+    )
+
+    assert response.status_code == 422
+
+
 def test_job_output_is_listed_and_owner_can_download(
     job_client: TestClient, tmp_path: Path
 ) -> None:
     profile_id = seed_profile(job_client, "user-alice")
-    created = job_client.post(
-        "/api/jobs", headers=HEADERS, json=tts_payload(profile_id)
-    ).json()
+    created = job_client.post("/api/jobs", headers=HEADERS, json=tts_payload(profile_id)).json()
     source = tmp_path / "result.wav"
     source.write_bytes(b"RIFFmock-wave")
     storage_key = asyncio.run(
@@ -170,15 +190,9 @@ def test_job_output_is_listed_and_owner_can_download(
             return output.id
 
     output_id = asyncio.run(seed_output())
-    detail = job_client.get(
-        f"/api/jobs/{created['id']}", headers={"X-User-ID": "user-alice"}
-    )
-    downloaded = job_client.get(
-        f"/api/files/{output_id}", headers={"X-User-ID": "user-alice"}
-    )
-    hidden = job_client.get(
-        f"/api/files/{output_id}", headers={"X-User-ID": "user-bob"}
-    )
+    detail = job_client.get(f"/api/jobs/{created['id']}", headers={"X-User-ID": "user-alice"})
+    downloaded = job_client.get(f"/api/files/{output_id}", headers={"X-User-ID": "user-alice"})
+    hidden = job_client.get(f"/api/files/{output_id}", headers={"X-User-ID": "user-bob"})
 
     assert detail.json()["outputs"][0]["download_url"] == f"/api/files/{output_id}"
     assert downloaded.status_code == 200
@@ -190,9 +204,7 @@ def test_terminal_job_event_stream_is_owned_and_resumes_event_id(
     job_client: TestClient,
 ) -> None:
     profile_id = seed_profile(job_client, "user-alice")
-    created = job_client.post(
-        "/api/jobs", headers=HEADERS, json=tts_payload(profile_id)
-    ).json()
+    created = job_client.post("/api/jobs", headers=HEADERS, json=tts_payload(profile_id)).json()
 
     async def complete_job() -> None:
         async with job_client.app.state.session_factory() as session:
@@ -229,9 +241,7 @@ def test_job_event_stream_emits_heartbeat_and_changed_terminal_state(
     job_client: TestClient,
 ) -> None:
     profile_id = seed_profile(job_client, "user-alice")
-    created = job_client.post(
-        "/api/jobs", headers=HEADERS, json=tts_payload(profile_id)
-    ).json()
+    created = job_client.post("/api/jobs", headers=HEADERS, json=tts_payload(profile_id)).json()
 
     def finish_later() -> None:
         time.sleep(0.06)
@@ -263,4 +273,3 @@ def test_job_event_stream_emits_heartbeat_and_changed_terminal_state(
         if line.startswith("data: ")
     ]
     assert [payload["status"] for payload in payloads] == ["QUEUED", "CANCELLED"]
-
