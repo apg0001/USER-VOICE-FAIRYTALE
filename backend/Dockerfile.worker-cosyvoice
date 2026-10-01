@@ -1,0 +1,33 @@
+FROM python:3.11-slim AS runtime
+
+ARG COSYVOICE_REVISION=074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    COSYVOICE_RUNTIME_PATH=/opt/cosyvoice
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y build-essential ffmpeg git libsndfile1 sox \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --filter=blob:none https://github.com/QwenAudio/CosyVoice.git /opt/cosyvoice \
+    && git -C /opt/cosyvoice checkout "$COSYVOICE_REVISION" \
+    && git -C /opt/cosyvoice submodule update --init --recursive --depth 1 \
+    && test "$(git -C /opt/cosyvoice rev-parse HEAD)" = "$COSYVOICE_REVISION"
+
+WORKDIR /app
+COPY requirements-cosyvoice.txt ./
+RUN pip install Cython==3.0.12 numpy==1.26.4 setuptools==80.9.0 \
+    && pip install --no-build-isolation -r requirements-cosyvoice.txt
+COPY pyproject.toml alembic.ini ./
+COPY alembic ./alembic
+COPY app ./app
+RUN pip install .
+
+RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p /data/storage /data/models \
+    && chown -R appuser:appuser /app /data
+USER appuser
+
+CMD ["celery", "-A", "app.workers.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=1"]
