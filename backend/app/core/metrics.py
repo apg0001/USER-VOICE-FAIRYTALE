@@ -7,10 +7,7 @@ def _escape(value: str) -> str:
 
 
 def _labels(values: tuple[str, ...], names: tuple[str, ...]) -> str:
-    return ",".join(
-        f'{name}="{_escape(value)}"'
-        for name, value in zip(names, values, strict=True)
-    )
+    return ",".join(f'{name}="{_escape(value)}"' for name, value in zip(names, values, strict=True))
 
 
 class MetricsRegistry:

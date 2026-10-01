@@ -44,9 +44,7 @@ async def put(storage: ObjectStorage, source: Path, namespace: str) -> str:
 async def test_expired_cleanup_retries_storage_failure_without_losing_metadata(
     tmp_path: Path,
 ) -> None:
-    engine, factory = create_session_factory(
-        f"sqlite+aiosqlite:///{tmp_path / 'cleanup.db'}"
-    )
+    engine, factory = create_session_factory(f"sqlite+aiosqlite:///{tmp_path / 'cleanup.db'}")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     source = tmp_path / "source.wav"
@@ -86,9 +84,7 @@ async def test_expired_cleanup_retries_storage_failure_without_losing_metadata(
 
 @pytest.mark.asyncio
 async def test_full_user_deletion_removes_only_owned_objects_and_rows(tmp_path: Path) -> None:
-    engine, factory = create_session_factory(
-        f"sqlite+aiosqlite:///{tmp_path / 'delete-user.db'}"
-    )
+    engine, factory = create_session_factory(f"sqlite+aiosqlite:///{tmp_path / 'delete-user.db'}")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     source = tmp_path / "source.wav"
@@ -145,9 +141,9 @@ async def test_full_user_deletion_removes_only_owned_objects_and_rows(tmp_path: 
         )
         await session.commit()
 
-        deleted = await CleanupService(
-            session, storage, RecordingQueue()
-        ).request_user_deletion("alice")
+        deleted = await CleanupService(session, storage, RecordingQueue()).request_user_deletion(
+            "alice"
+        )
         assert deleted is True
         assert await session.get(User, alice.id) is None
         assert await session.get(User, bob.id) is not None
@@ -163,9 +159,7 @@ async def test_full_user_deletion_removes_only_owned_objects_and_rows(tmp_path: 
 async def test_cleanup_skips_active_input_and_reconciles_only_old_known_orphans(
     tmp_path: Path,
 ) -> None:
-    engine, factory = create_session_factory(
-        f"sqlite+aiosqlite:///{tmp_path / 'reconcile.db'}"
-    )
+    engine, factory = create_session_factory(f"sqlite+aiosqlite:///{tmp_path / 'reconcile.db'}")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     source = tmp_path / "source.wav"

@@ -39,4 +39,3 @@ async def get_actor_id(
             detail="인증이 필요합니다.",
         )
     return value
-

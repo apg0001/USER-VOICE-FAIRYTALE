@@ -21,9 +21,7 @@ class MockVoiceConversionModel:
     def load(self) -> None:
         self.loaded = True
 
-    def convert(
-        self, pcm_s16le: bytes, sample_rate: int, voice_profile: dict[str, Any]
-    ) -> bytes:
+    def convert(self, pcm_s16le: bytes, sample_rate: int, voice_profile: dict[str, Any]) -> bytes:
         if not self.loaded:
             raise RuntimeError("model must be loaded before inference")
         fingerprint = str(voice_profile.get("source_sha256", "0"))

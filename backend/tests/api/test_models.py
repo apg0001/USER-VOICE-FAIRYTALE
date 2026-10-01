@@ -9,4 +9,3 @@ def test_models_can_be_filtered_by_capability(client: TestClient) -> None:
     assert len(payload["items"]) == 1
     assert payload["items"][0]["key"] == "mock-universal-v1"
     assert payload["items"][0]["is_mock"] is True
-

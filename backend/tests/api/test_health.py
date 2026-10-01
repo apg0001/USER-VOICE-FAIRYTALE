@@ -12,4 +12,3 @@ def test_health_returns_runtime_metadata(client: TestClient) -> None:
         "environment": "test",
     }
     assert response.headers["X-Request-ID"]
-

@@ -20,4 +20,3 @@ class AudioPreprocessingPipeline:
         config: PreprocessingConfig,
     ) -> None:
         await self.media_tool.transcode(source, destination, config)
-

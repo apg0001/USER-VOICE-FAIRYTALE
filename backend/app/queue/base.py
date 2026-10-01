@@ -11,4 +11,3 @@ class JobQueue(Protocol):
     def revoke(self, task_id: str) -> None:
         """Request cooperative cancellation without killing the worker process."""
         ...
-

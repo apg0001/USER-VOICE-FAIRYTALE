@@ -37,4 +37,3 @@ class ObjectStorage(ABC):
         """List objects below a controlled namespace for reconciliation."""
 
         pass
-

@@ -76,9 +76,7 @@ class FakeModel:
             self.on_unload()
 
 
-def build_manager(
-    runtime: FakeRuntime, *, limit: int = 2, reserve_mb: int = 500
-) -> ModelManager:
+def build_manager(runtime: FakeRuntime, *, limit: int = 2, reserve_mb: int = 500) -> ModelManager:
     return ModelManager(
         device="cuda:0",
         max_cached_models=limit,
@@ -168,8 +166,11 @@ def test_manager_serializes_duplicate_loads() -> None:
 
 def test_gpu_admission_checks_availability_and_free_memory() -> None:
     unavailable = build_manager(FakeRuntime(available=False))
-    with pytest.raises(GPUUnavailableError), unavailable.lease(
-        "tts", lambda: FakeModel("gpu", requires_gpu=True, estimated_vram_mb=1_000)
+    with (
+        pytest.raises(GPUUnavailableError),
+        unavailable.lease(
+            "tts", lambda: FakeModel("gpu", requires_gpu=True, estimated_vram_mb=1_000)
+        ),
     ):
         pass
 
@@ -196,8 +197,11 @@ def test_gpu_admission_evicts_idle_model_before_loading() -> None:
     assert first.unload_count == 1
 
     insufficient = build_manager(FakeRuntime(free_memory_mb=1_200), reserve_mb=500)
-    with pytest.raises(VRAMAdmissionError), insufficient.lease(
-        "tts", lambda: FakeModel("gpu", requires_gpu=True, estimated_vram_mb=1_000)
+    with (
+        pytest.raises(VRAMAdmissionError),
+        insufficient.lease(
+            "tts", lambda: FakeModel("gpu", requires_gpu=True, estimated_vram_mb=1_000)
+        ),
     ):
         pass
 

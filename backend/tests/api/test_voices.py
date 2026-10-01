@@ -139,14 +139,10 @@ def test_create_list_ownership_and_delete_profile(
     listing = client.get("/api/voices", headers={"X-User-ID": "voice-owner"})
     assert listing.status_code == 200
     assert len(listing.json()["items"]) == 1
-    hidden = client.get(
-        f"/api/voices/{payload['id']}", headers={"X-User-ID": "different-user"}
-    )
+    hidden = client.get(f"/api/voices/{payload['id']}", headers={"X-User-ID": "different-user"})
     assert hidden.status_code == 404
 
-    deleted = client.delete(
-        f"/api/voices/{payload['id']}", headers={"X-User-ID": "voice-owner"}
-    )
+    deleted = client.delete(f"/api/voices/{payload['id']}", headers={"X-User-ID": "voice-owner"})
     assert deleted.status_code == 204
     assert client.get("/api/voices", headers={"X-User-ID": "voice-owner"}).json()["items"] == []
 
@@ -236,4 +232,3 @@ def test_singing_input_preserves_music_sample_rate_and_channels(
         normalize_loudness=False,
         noise_reduction="off",
     )
-

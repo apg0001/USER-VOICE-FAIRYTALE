@@ -45,8 +45,7 @@ def test_readiness_metrics_trace_and_security_headers(
     metrics = operations_client.get("/api/metrics")
     assert metrics.status_code == 200
     assert (
-        'voice_http_requests_total{method="GET",route="/api/ready",status="200"} 1'
-        in metrics.text
+        'voice_http_requests_total{method="GET",route="/api/ready",status="200"} 1' in metrics.text
     )
 
 

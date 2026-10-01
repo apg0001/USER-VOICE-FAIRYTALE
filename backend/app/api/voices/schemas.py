@@ -29,4 +29,3 @@ class VoiceProfileListResponse(BaseModel):
 class VoiceConsentResponse(BaseModel):
     version: str
     statement: str
-

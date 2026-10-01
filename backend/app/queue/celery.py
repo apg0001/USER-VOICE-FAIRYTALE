@@ -9,4 +9,3 @@ class CeleryJobQueue(JobQueue):
 
     def revoke(self, task_id: str) -> None:
         celery_app.control.revoke(task_id, terminate=False)
-

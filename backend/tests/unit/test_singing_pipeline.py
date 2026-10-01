@@ -11,9 +11,7 @@ from app.pipelines import SingingPipeline
 from app.storage import LocalObjectStorage
 
 
-def write_stereo_wav(
-    path: Path, *, seconds: int = 21, sample_rate: int = 8_000
-) -> None:
+def write_stereo_wav(path: Path, *, seconds: int = 21, sample_rate: int = 8_000) -> None:
     samples = array("h")
     for index in range(seconds * sample_rate):
         sample = 7_000 if index % 2 else -7_000
@@ -93,9 +91,7 @@ def test_mock_singing_conversion_preserves_frame_and_pitch_direction() -> None:
     model.load()
     source = array("h", [-8_000, -2_000, 0, 2_000, 8_000])
 
-    converted_bytes = model.convert(
-        source.tobytes(), 44_100, 1, {"source_sha256": "fingerprint"}
-    )
+    converted_bytes = model.convert(source.tobytes(), 44_100, 1, {"source_sha256": "fingerprint"})
 
     converted = array("h")
     converted.frombytes(converted_bytes)

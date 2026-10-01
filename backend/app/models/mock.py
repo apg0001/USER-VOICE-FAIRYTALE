@@ -35,4 +35,3 @@ class MockVoiceModel(VoiceModel):
 
     def unload(self) -> None:
         self.loaded = False
-

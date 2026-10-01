@@ -46,4 +46,3 @@ class VoiceModel(ABC):
     @abstractmethod
     def unload(self) -> None:
         """Release CPU/GPU resources."""
-

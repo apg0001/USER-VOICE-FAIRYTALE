@@ -65,4 +65,3 @@ class LocalObjectStorage(ObjectStorage):
             ]
 
         return await asyncio.to_thread(scan)
-

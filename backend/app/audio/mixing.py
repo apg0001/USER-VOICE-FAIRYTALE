@@ -46,10 +46,7 @@ def mix_pcm_s16le(
     limiter_gain = 1.0 if peak_before <= target_peak else target_peak / peak_before
     limited = array(
         "h",
-        (
-            max(-32_768, min(32_767, round(sample * limiter_gain)))
-            for sample in mixed
-        ),
+        (max(-32_768, min(32_767, round(sample * limiter_gain))) for sample in mixed),
     )
     peak_after = max((abs(sample) for sample in limited), default=0)
     return limited.tobytes(), MixingMetrics(

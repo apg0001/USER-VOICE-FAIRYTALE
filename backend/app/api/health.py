@@ -66,21 +66,16 @@ async def metrics(request: Request) -> PlainTextResponse:
                 await session.execute(select(Job.status, func.count(Job.id)).group_by(Job.status))
             )
             retrying_inputs = await session.scalar(
-                select(func.count(InputArtifact.id)).where(
-                    InputArtifact.deletion_attempts > 0
-                )
+                select(func.count(InputArtifact.id)).where(InputArtifact.deletion_attempts > 0)
             )
             pending_profiles = await session.scalar(
-                select(func.count(VoiceProfile.id)).where(
-                    VoiceProfile.status == "DELETION_PENDING"
-                )
+                select(func.count(VoiceProfile.id)).where(VoiceProfile.status == "DELETION_PENDING")
             )
             pending_users = await session.scalar(
                 select(func.count(User.id)).where(User.deletion_requested_at.is_not(None))
             )
         operational_lines.extend(
-            f'voice_jobs{{status="{job_status.value}"}} {count}'
-            for job_status, count in job_counts
+            f'voice_jobs{{status="{job_status.value}"}} {count}' for job_status, count in job_counts
         )
         operational_lines.extend(
             [
@@ -103,4 +98,3 @@ async def metrics(request: Request) -> PlainTextResponse:
         request.app.state.metrics.render() + "\n".join(operational_lines) + "\n",
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )
-

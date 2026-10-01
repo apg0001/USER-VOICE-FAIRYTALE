@@ -121,9 +121,7 @@ async def list_jobs(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> JobListResponse:
     service = get_job_service(request, session)
-    page = await service.list_owned_jobs(
-        actor_id, status=job_status, limit=limit, offset=offset
-    )
+    page = await service.list_owned_jobs(actor_id, status=job_status, limit=limit, offset=offset)
     return JobListResponse(
         items=[await serialize_job(service, item) for item in page.items],
         total=page.total,
@@ -197,4 +195,3 @@ async def retry_job(
             detail="재시도에 필요한 입력 파일이 만료되었거나 삭제되었습니다.",
         ) from error
     return await serialize_job(service, job)
-

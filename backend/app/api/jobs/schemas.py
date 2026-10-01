@@ -20,10 +20,14 @@ class JobCreateRequest(BaseModel):
             raise ValueError("TTS 작업에는 input_text가 필요합니다.")
         if not self.voice_profile_id:
             raise ValueError("음성 작업에는 voice_profile_id가 필요합니다.")
-        if self.mode in {
-            JobMode.SPEECH_VOICE_CONVERSION,
-            JobMode.SINGING_VOICE_CONVERSION,
-        } and not self.input_storage_key:
+        if (
+            self.mode
+            in {
+                JobMode.SPEECH_VOICE_CONVERSION,
+                JobMode.SINGING_VOICE_CONVERSION,
+            }
+            and not self.input_storage_key
+        ):
             raise ValueError("음성 변환 작업에는 input_storage_key가 필요합니다.")
         return self
 
@@ -61,4 +65,3 @@ class JobListResponse(BaseModel):
     total: int
     limit: int
     offset: int
-

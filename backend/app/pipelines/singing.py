@@ -77,16 +77,14 @@ class SingingPipeline:
                     output.setframerate(sample_rate)
                     completed = 0
                     while pcm := source.readframes(frames_per_chunk):
-                        mixed, vocal, instrumental, converted, metrics = (
-                            await asyncio.to_thread(
-                                self._process_chunk,
-                                pcm,
-                                sample_rate,
-                                channels,
-                                separator,
-                                singing_model,
-                                voice_profile,
-                            )
+                        mixed, vocal, instrumental, converted, metrics = await asyncio.to_thread(
+                            self._process_chunk,
+                            pcm,
+                            sample_rate,
+                            channels,
+                            separator,
+                            singing_model,
+                            voice_profile,
                         )
                         output.writeframes(mixed)
                         vocal_digest.update(vocal)
@@ -153,9 +151,7 @@ class SingingPipeline:
     ) -> tuple[bytes, bytes, bytes, bytes, MixingMetrics]:
         separated = separator.separate(pcm, sample_rate, channels)
         if not (
-            len(separated.vocal_pcm_s16le)
-            == len(separated.instrumental_pcm_s16le)
-            == len(pcm)
+            len(separated.vocal_pcm_s16le) == len(separated.instrumental_pcm_s16le) == len(pcm)
         ):
             raise ValueError("separator must preserve frame count")
         converted = singing_model.convert(

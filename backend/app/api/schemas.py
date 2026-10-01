@@ -28,4 +28,3 @@ class ModelResponse(BaseModel):
 
 class ModelListResponse(BaseModel):
     items: list[ModelResponse]
-

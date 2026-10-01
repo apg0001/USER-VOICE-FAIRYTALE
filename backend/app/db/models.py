@@ -148,9 +148,7 @@ class Job(UUIDTimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(back_populates="jobs")
-    outputs: Mapped[list["JobOutput"]] = relationship(
-        back_populates="job", passive_deletes=True
-    )
+    outputs: Mapped[list["JobOutput"]] = relationship(back_populates="job", passive_deletes=True)
 
 
 class JobOutput(UUIDTimestampMixin, Base):
@@ -164,4 +162,3 @@ class JobOutput(UUIDTimestampMixin, Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     job: Mapped[Job] = relationship(back_populates="outputs")
-

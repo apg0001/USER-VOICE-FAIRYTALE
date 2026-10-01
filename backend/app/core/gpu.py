@@ -95,4 +95,3 @@ class TorchGPURuntime:
                 self._module.cuda.empty_cache()
         except Exception:
             return
-

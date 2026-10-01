@@ -80,9 +80,7 @@ class CleanupService:
 
         actor_hash = hashlib.sha256(external_user_id.encode()).hexdigest()[:16]
         log.info("user_data_deletion_requested", actor_hash=actor_hash)
-        user = await self.session.scalar(
-            select(User).where(User.external_id == external_user_id)
-        )
+        user = await self.session.scalar(select(User).where(User.external_id == external_user_id))
         if user is None:
             log.info("user_data_deletion_completed", actor_hash=actor_hash, already_absent=True)
             return True
@@ -181,12 +179,8 @@ class CleanupService:
             await self.session.commit()
 
     async def _reconcile_orphans(self, now: datetime, report: CleanupReport) -> None:
-        tracked = set(
-            await self.session.scalars(select(InputArtifact.original_storage_key))
-        )
-        tracked.update(
-            await self.session.scalars(select(InputArtifact.cleaned_storage_key))
-        )
+        tracked = set(await self.session.scalars(select(InputArtifact.original_storage_key)))
+        tracked.update(await self.session.scalars(select(InputArtifact.cleaned_storage_key)))
         tracked.update(await self.session.scalars(select(VoiceSample.original_storage_key)))
         tracked.update(
             key
@@ -239,9 +233,7 @@ class CleanupService:
     async def _cleanup_pending_users(self, report: CleanupReport) -> None:
         users = list(
             await self.session.scalars(
-                select(User)
-                .where(User.deletion_requested_at.is_not(None))
-                .limit(self.batch_size)
+                select(User).where(User.deletion_requested_at.is_not(None)).limit(self.batch_size)
             )
         )
         for user in users:

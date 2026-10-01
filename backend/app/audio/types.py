@@ -58,4 +58,3 @@ class AudioArtifact:
     probe: AudioProbe
     quality: AudioQuality
     preprocessing: PreprocessingConfig
-

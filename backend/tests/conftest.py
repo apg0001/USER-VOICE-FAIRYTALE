@@ -66,4 +66,3 @@ def job_client(tmp_path, recording_queue: RecordingQueue) -> Iterator[TestClient
     )
     with TestClient(create_app(settings, job_queue=recording_queue)) as test_client:
         yield test_client
-

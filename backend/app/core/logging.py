@@ -40,9 +40,7 @@ def redact_sensitive(
         return value
 
     return {
-        key: "[REDACTED]"
-        if any(part in key.lower() for part in SENSITIVE_PARTS)
-        else redact(value)
+        key: "[REDACTED]" if any(part in key.lower() for part in SENSITIVE_PARTS) else redact(value)
         for key, value in event_dict.items()
     }
 
@@ -67,4 +65,3 @@ def configure_logging(level: str) -> None:
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
-

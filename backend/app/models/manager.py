@@ -202,9 +202,7 @@ class ModelManager:
             return tuple(self._entries)
 
     def is_out_of_memory(self, error: BaseException) -> bool:
-        return isinstance(error, ModelOutOfMemoryError) or self.gpu_runtime.is_out_of_memory(
-            error
-        )
+        return isinstance(error, ModelOutOfMemoryError) or self.gpu_runtime.is_out_of_memory(error)
 
     def diagnose(self) -> GPUSnapshot:
         return self.gpu_runtime.probe(self.device)
@@ -237,8 +235,7 @@ class ModelManager:
                 victim = self._oldest_idle_entry()
                 if victim is None:
                     raise VRAMAdmissionError(
-                        f"requires {required_vram_mb} MiB plus "
-                        f"{self.vram_reserve_mb} MiB reserve"
+                        f"requires {required_vram_mb} MiB plus {self.vram_reserve_mb} MiB reserve"
                     )
                 cache_key, entry = victim
                 evicted.append(cache_key.label())
@@ -277,4 +274,3 @@ class ModelManager:
         if not isinstance(value, int | float) or value < 0:
             raise ValueError("estimated_vram_mb must be a non-negative number")
         return round(value)
-
