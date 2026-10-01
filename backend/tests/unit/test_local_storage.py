@@ -17,4 +17,3 @@ async def test_storage_uses_generated_key_and_blocks_traversal(tmp_path: Path) -
     assert b"".join([chunk async for chunk in storage.open(key)]) == b"RIFF-test"
     with pytest.raises(ValueError, match="invalid storage key"):
         _ = storage._safe_path("../../secret")
-

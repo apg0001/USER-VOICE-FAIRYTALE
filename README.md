@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 10 운영 안정성·보안**. 소유자 전용 Job UX에 더해 구조화 로그/trace/metrics/readiness, 입력·출력 보존기간, 재시도 가능한 cleanup, 사용자 전체 삭제와 운영 runbook이 구현되어 있습니다. 현재 실제 사람 음색 모델 대신 계약 검증용 Mock adapter를 사용합니다.
+> 현재 범위: **Phase 11 실제 한국어 TTS**. 기존 Mock adapter와 함께, 고정된 Fun-CosyVoice3 0.5B 체크포인트를 워커 전용 실제 adapter로 선택할 수 있습니다. RTX 3050 8GB에서 한국어 고정 코퍼스 acceptance를 통과했으며 API 이미지는 무거운 추론 의존성을 포함하지 않습니다.
 
 ## 주요 기능
 
@@ -158,7 +158,7 @@ Registry는 구체 라이브러리 대신 stable model key와 capability를 노�
 
 ## AI Worker
 
-Celery Worker는 API와 별도 프로세스입니다. `voice.run_inference`는 DB에서 Job을 읽고 각 단계 상태를 commit하며 Mock 모델 lifecycle을 끝까지 실행합니다. Mock은 유효한 WAV를 생성하지만 실제 음색 품질 모델은 아니며, 대용량 PyTorch/CUDA 의존성은 향후 별도 Worker image에만 설치합니다.
+Celery Worker는 API와 별도 프로세스입니다. `voice.run_inference`는 DB에서 Job을 읽고 각 단계 상태를 commit하며 모델 lifecycle을 끝까지 실행합니다. 기본 환경의 Mock은 유효한 WAV를 생성하지만 실제 음색 품질 모델은 아닙니다. 실제 Fun-CosyVoice3 adapter와 PyTorch/CUDA 의존성은 `Dockerfile.worker-cosyvoice`로 만든 전용 Worker image에만 설치됩니다.
 
 ## Queue
 
@@ -171,16 +171,19 @@ Redis는 broker이고 PostgreSQL의 `jobs`가 영속 상태의 기준입니다. 
 기본 compose는 GPU 없이 Mock으로 실행됩니다. GPU가 있는 Linux host에서는 NVIDIA Container Toolkit 설치 후 다음 override를 사용합니다.
 
 ```bash
+python -m pip install huggingface-hub==0.36.0
+python scripts/download_cosyvoice3.py
+python scripts/verify_cosyvoice3.py
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
 Worker 시작 시 Mock mode는 PyTorch를 import하지 않고 device 설정만 기록합니다. 실제 inference mode는 CUDA availability, device name, total/free VRAM, PyTorch/CUDA version을 진단합니다. ModelManager는 model lease가 해제된 idle entry만 LRU eviction하며, CUDA OOM이면 현재 Job을 `CUDA_OOM`으로 실패시키고 전체 idle cache, Python GC, CUDA cache를 정리합니다. 자세한 계약과 실제 GPU 검증 절차는 [Model Manager 문서](docs/model-manager.md)에 있습니다.
 
-실제 모델 adapter가 아직 없으므로 `USE_MOCK_INFERENCE=false`는 현재 모델 목록을 비웁니다. GPU override만 실행했다고 실제 모델 품질이나 OOM 복구가 검증된 것은 아닙니다.
+실제 한국어 TTS는 `ENABLE_COSYVOICE3=true`일 때만 등록됩니다. 체크포인트를 먼저 내려받은 뒤 GPU compose override를 사용하세요. 평가 기준과 측정치는 [모델 평가 문서](docs/model-evaluation.md)에 있습니다.
 
 ## Docker
 
-서비스는 `frontend`, `backend`, `worker`, `scheduler`, `redis`, `database`입니다. scheduler는 15분마다 보존기간 cleanup을 실행합니다. 미디어와 모델은 named volume에 저장하고 DB와 Redis는 health check 뒤에 의존 서비스를 시작합니다.
+서비스는 `frontend`, `backend`, `worker`, `scheduler`, `redis`, `database`입니다. scheduler는 15분마다 보존기간 cleanup을 실행합니다. 기본 compose는 미디어와 모델을 named volume에 저장하고, GPU override는 검증된 로컬 `models/` checkpoint를 read-only bind mount합니다. DB와 Redis는 health check 뒤에 의존 서비스를 시작합니다.
 
 Docker Desktop 또는 Docker Engine이 설치된 환경에서:
 
@@ -225,6 +228,10 @@ cd frontend && npm ci
 | `RATE_LIMIT_REQUESTS_PER_MINUTE` | 120 | API process별 요청 방어 한도 |
 | `READINESS_REQUIRE_REDIS` | false | readiness Redis ping 필수 여부 |
 | `USE_MOCK_INFERENCE` | `true` | 개발/CI model registry |
+| `ENABLE_COSYVOICE3` | `false` | CosyVoice3 descriptor/profile/worker adapter 활성화 |
+| `COSYVOICE_RUNTIME_PATH` | `./models/cosyvoice-runtime` | 고정 CosyVoice runtime checkout |
+| `COSYVOICE_CHECKPOINT_PATH` | `./models/cosyvoice3-0.5b-2512` | 매니페스트가 포함된 고정 checkpoint |
+| `COSYVOICE_FP16` | `true` | 실제 Worker의 FP16 추론 |
 | `TEMP_RETENTION_HOURS` | 24 | 디버그 임시 파일 최대 보존 |
 | `INPUT_RETENTION_HOURS` | 24 | 입력 원본·정제본 보존시간 |
 | `OUTPUT_RETENTION_HOURS` | 168 | 생성 결과 보존시간 |
@@ -293,6 +300,7 @@ curl -X POST http://localhost:8000/api/jobs \
 - [x] Phase 8: ModelManager/GPU/OOM
 - [x] Phase 9: SSE/ETA/Queue/History UX
 - [x] Phase 10: logging/monitoring/cleanup/security/deploy
+- [x] Phase 11: licensed real Korean TTS adapter and GPU acceptance
 
 ## Development Workflow
 
@@ -326,6 +334,6 @@ Voice Cloning은 명시적 권한이 있는 음성만 허용합니다. 동의 �
 - `API offline`: backend가 8000 포트에서 실행 중인지 `/api/health`를 확인하세요.
 - DB 연결 실패: async driver가 URL과 일치하는지, compose의 `database` health를 확인하세요.
 - Redis 연결 실패: `redis-cli ping`과 `REDIS_URL` host를 확인하세요. 컨테이너 내부 host는 `localhost`가 아니라 `redis`입니다.
-- 모델 목록이 비어 있음: Phase 1에서는 `USE_MOCK_INFERENCE=true`여야 Mock이 등록됩니다.
+- 모델 목록이 비어 있음: 개발 환경에서는 `USE_MOCK_INFERENCE=true`인지 확인하세요. 실제 TTS는 Worker와 API에 동일하게 `ENABLE_COSYVOICE3=true`를 적용하고 checkpoint/runtime mount를 제공해야 등록됩니다.
 - CUDA를 찾지 못함: NVIDIA driver, Container Toolkit, compose GPU override와 `nvidia-smi`를 순서대로 확인하세요.
 - migration 불일치: 임의로 테이블을 만들지 말고 `cd backend && alembic upgrade head`를 실행하세요.

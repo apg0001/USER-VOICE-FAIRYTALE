@@ -30,4 +30,3 @@ def test_mime_must_match_extension(tmp_path: Path) -> None:
         validate_upload_identity(source, "voice.wav", "application/octet-stream")
 
     assert captured.value.code == "MIME_MISMATCH"
-

@@ -51,4 +51,3 @@ def release_worker_models(**_: object) -> None:
     from app.workers.model_runtime import reset_worker_model_manager
 
     reset_worker_model_manager()
-

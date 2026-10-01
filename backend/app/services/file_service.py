@@ -84,4 +84,3 @@ class FileService:
             while chunk := stream.read(1024 * 1024):
                 digest.update(chunk)
         return digest.hexdigest()
-

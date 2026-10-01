@@ -16,4 +16,3 @@ api_router.include_router(job_events_router)
 api_router.include_router(voices_router)
 api_router.include_router(files_router)
 api_router.include_router(users_router)
-

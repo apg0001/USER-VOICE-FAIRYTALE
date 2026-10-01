@@ -125,9 +125,7 @@ class FFmpegMediaTool(MediaTool):
             noise_level=noise_level,
         )
 
-    async def transcode(
-        self, source: Path, destination: Path, config: PreprocessingConfig
-    ) -> None:
+    async def transcode(self, source: Path, destination: Path, config: PreprocessingConfig) -> None:
         filters: list[str] = []
         if config.trim_silence:
             filters.append(
@@ -158,4 +156,3 @@ class FFmpegMediaTool(MediaTool):
             command.extend(["-af", ",".join(filters)])
         command.extend(["-c:a", "pcm_s16le", str(destination)])
         await self._run(*command)
-

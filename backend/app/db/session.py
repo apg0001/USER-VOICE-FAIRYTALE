@@ -21,10 +21,10 @@ def create_session_factory(
             cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
+
     return engine, async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
     async with request.app.state.session_factory() as session:
         yield session
-

@@ -23,9 +23,7 @@ class VoiceConversionModelRegistry:
             raise VoiceConversionModelNotFoundError(key) from error
 
 
-def build_voice_conversion_registry(
-    *, include_mock: bool
-) -> VoiceConversionModelRegistry:
+def build_voice_conversion_registry(*, include_mock: bool) -> VoiceConversionModelRegistry:
     registry = VoiceConversionModelRegistry()
     if include_mock:
         registry.register(MockVoiceConversionModel)

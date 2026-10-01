@@ -126,6 +126,9 @@ class JobService:
             )
             if profile is None or profile.status != "READY":
                 raise InvalidVoiceProfileError(command.voice_profile_id)
+            model_profiles = profile.profile_metadata.get("model_profiles", {})
+            if command.model_key not in model_profiles:
+                raise InvalidVoiceProfileError(command.voice_profile_id)
 
         if command.mode in {
             JobMode.SPEECH_VOICE_CONVERSION,
@@ -209,9 +212,7 @@ class JobService:
         user = await resolve_user(self.session, external_user_id, create=False)
         if user is None:
             raise JobNotFoundError(job_id)
-        job = await self.session.scalar(
-            select(Job).where(Job.id == job_id, Job.user_id == user.id)
-        )
+        job = await self.session.scalar(select(Job).where(Job.id == job_id, Job.user_id == user.id))
         if job is None:
             raise JobNotFoundError(job_id)
         return job
@@ -376,4 +377,3 @@ class JobService:
         if len(factors) < 3:
             return None
         return max(1, round(float(input_duration) * statistics.median(factors)))
-

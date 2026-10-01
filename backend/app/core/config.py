@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     sse_poll_interval_seconds: float = Field(default=1.0, gt=0)
     sse_heartbeat_seconds: float = Field(default=15.0, gt=0)
     use_mock_inference: bool = True
+    enable_cosyvoice3: bool = False
+    cosyvoice_runtime_path: Path = Path("./models/cosyvoice-runtime")
+    cosyvoice_checkpoint_path: Path = Path("./models/cosyvoice3-0.5b-2512")
+    cosyvoice_fp16: bool = True
     temp_retention_hours: int = 24
     input_retention_hours: int = Field(default=24, ge=1)
     output_retention_hours: int = Field(default=168, ge=1)
@@ -56,4 +60,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

@@ -70,6 +70,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
             model_key=model.descriptor.key,
             model_version=model.descriptor.version,
         ).to_dict()
+
     try:
         async with session_factory() as session:
             service = JobService(session, CeleryJobQueue())
@@ -89,7 +90,8 @@ async def execute_job(job_id: str) -> dict[str, str]:
             load_time = 0.0
             if is_tts:
                 tts_registry = build_tts_model_registry(
-                    include_mock=settings.use_mock_inference
+                    include_mock=settings.use_mock_inference,
+                    settings=settings,
                 )
                 tts_lease = lease_stack.enter_context(
                     manager.lease("tts", lambda: tts_registry.create(job.model_key))
@@ -103,9 +105,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     include_mock=settings.use_mock_inference
                 )
                 conversion_lease = lease_stack.enter_context(
-                    manager.lease(
-                        "speech-vc", lambda: conversion_registry.create(job.model_key)
-                    )
+                    manager.lease("speech-vc", lambda: conversion_registry.create(job.model_key))
                 )
                 model = conversion_lease.model
                 active_cache_keys.add(conversion_lease.cache_key)
@@ -115,9 +115,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 separation_registry = build_separation_registry(
                     include_mock=settings.use_mock_inference
                 )
-                singing_registry = build_singing_registry(
-                    include_mock=settings.use_mock_inference
-                )
+                singing_registry = build_singing_registry(include_mock=settings.use_mock_inference)
                 separator_lease = lease_stack.enter_context(
                     manager.lease(
                         "separation",
@@ -125,9 +123,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     )
                 )
                 singing_lease = lease_stack.enter_context(
-                    manager.lease(
-                        "singing-vc", lambda: singing_registry.create(job.model_key)
-                    )
+                    manager.lease("singing-vc", lambda: singing_registry.create(job.model_key))
                 )
                 separator = separator_lease.model
                 model = singing_lease.model
@@ -342,9 +338,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     "channels": singing.channels,
                     "separator": separator.descriptor.key,
                     "preserved": preserved,
-                    "intermediates_cleaned": singing.manifest["mixing"][
-                        "intermediates_cleaned"
-                    ],
+                    "intermediates_cleaned": singing.manifest["mixing"]["intermediates_cleaned"],
                 }
             else:
                 voice_model = cast(VoiceModel, model)
@@ -372,26 +366,14 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 "postprocessing_time": round(postprocess_time, 6),
                 "processing_time": round(time.monotonic() - started, 6),
                 "model": tracked_job.model_key,
+                **({"tts_checkpoint": tracked_job.metrics.get("tts_checkpoint")} if is_tts else {}),
                 **(
-                    {"tts_checkpoint": tracked_job.metrics.get("tts_checkpoint")}
-                    if is_tts
-                    else {}
-                ),
-                **(
-                    {
-                        "conversion_checkpoint": tracked_job.metrics.get(
-                            "conversion_checkpoint"
-                        )
-                    }
+                    {"conversion_checkpoint": tracked_job.metrics.get("conversion_checkpoint")}
                     if is_speech_vc
                     else {}
                 ),
                 **(
-                    {
-                        "singing_checkpoint": tracked_job.metrics.get(
-                            "singing_checkpoint"
-                        )
-                    }
+                    {"singing_checkpoint": tracked_job.metrics.get("singing_checkpoint")}
                     if is_singing_vc
                     else {}
                 ),
@@ -407,9 +389,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
         if generated_storage_key is not None:
             await output_storage.delete(generated_storage_key)
             async with session_factory() as cleanup_session:
-                await cleanup_session.execute(
-                    delete(JobOutput).where(JobOutput.job_id == job_id)
-                )
+                await cleanup_session.execute(delete(JobOutput).where(JobOutput.job_id == job_id))
                 await cleanup_session.commit()
         log.info("worker_transition_skipped", job_id=job_id, reason=str(error))
         return {"job_id": job_id, "status": "transition-skipped"}
@@ -433,9 +413,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
             if generated_storage_key is not None:
                 await output_storage.delete(generated_storage_key)
             async with session_factory() as recovery_session:
-                await recovery_session.execute(
-                    delete(JobOutput).where(JobOutput.job_id == job_id)
-                )
+                await recovery_session.execute(delete(JobOutput).where(JobOutput.job_id == job_id))
                 await recovery_session.commit()
                 service = JobService(recovery_session, CeleryJobQueue())
                 if oom_recovery is not None:
@@ -463,4 +441,3 @@ async def execute_job(job_id: str) -> dict[str, str]:
 def run_inference(self: Any, job_id: str) -> dict[str, str]:
     log.info("worker_task_started", job_id=job_id, worker_id=self.request.hostname)
     return asyncio.run(execute_job(job_id))
-

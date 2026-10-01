@@ -28,13 +28,9 @@ class FakeMediaTool:
     async def analyze(self, source: Path, duration_seconds: float) -> AudioQuality:
         return AudioQuality(10.0, 2.0, 0.1667, -1.0, False, -48.0, "normal")
 
-    async def transcode(
-        self, source: Path, destination: Path, config: PreprocessingConfig
-    ) -> None:
+    async def transcode(self, source: Path, destination: Path, config: PreprocessingConfig) -> None:
         self.transcode_config = config
-        await asyncio.to_thread(
-            destination.write_bytes, b"RIFF\x00\x00\x00\x00WAVEcleaned"
-        )
+        await asyncio.to_thread(destination.write_bytes, b"RIFF\x00\x00\x00\x00WAVEcleaned")
 
 
 @pytest.mark.asyncio
@@ -129,4 +125,3 @@ async def test_real_ffmpeg_preserves_stereo_for_singing(tmp_path: Path) -> None:
     assert probe.sample_rate == 44_100
     assert probe.channels == 2
     assert probe.codec_name == "pcm_s16le"
-

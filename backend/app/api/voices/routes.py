@@ -57,13 +57,9 @@ def get_voice_service(request: Request, session: AsyncSession) -> VoiceService:
     )
 
 
-async def serialize_profile(
-    session: AsyncSession, profile: VoiceProfile
-) -> VoiceProfileResponse:
+async def serialize_profile(session: AsyncSession, profile: VoiceProfile) -> VoiceProfileResponse:
     samples = list(
-        await session.scalars(
-            select(VoiceSample).where(VoiceSample.voice_profile_id == profile.id)
-        )
+        await session.scalars(select(VoiceSample).where(VoiceSample.voice_profile_id == profile.id))
     )
     model_profiles = profile.profile_metadata.get("model_profiles", {})
     return VoiceProfileResponse(
@@ -97,6 +93,7 @@ async def create_voice_profile(
     consent_version: Annotated[str, Form(max_length=30)],
     voice_sample: Annotated[UploadFile, File()],
     noise_reduction: Annotated[NoiseReduction, Form()] = NoiseReduction.NORMAL,
+    sample_transcript: Annotated[str | None, Form(max_length=1000)] = None,
 ) -> VoiceProfileResponse:
     settings = request.app.state.settings
     normalized_name = name.strip()
@@ -127,6 +124,7 @@ async def create_voice_profile(
                 version=consent_version,
             ),
             preprocessing=PreprocessingConfig(noise_reduction=noise_reduction),
+            sample_transcript=(sample_transcript or "").strip() or None,
         )
         return await serialize_profile(session, profile)
     except ConsentRequiredError as error:
@@ -138,8 +136,7 @@ async def create_voice_profile(
         raise HTTPException(
             status_code=422,
             detail=(
-                f"선명한 음성이 최소 "
-                f"{settings.min_voice_profile_speech_seconds:g}초 필요합니다."
+                f"선명한 음성이 최소 {settings.min_voice_profile_speech_seconds:g}초 필요합니다."
             ),
         ) from error
     except AudioValidationError as error:
@@ -205,4 +202,3 @@ async def delete_voice_profile(
         await service.delete_profile(actor_id, profile_id)
     except VoiceProfileNotFoundError as error:
         raise HTTPException(status_code=404, detail="음성 프로필을 찾을 수 없습니다.") from error
-

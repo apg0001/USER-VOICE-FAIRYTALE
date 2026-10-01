@@ -45,4 +45,3 @@ async def test_state_machine_requires_ordered_monotonic_progress(tmp_path: Path)
         assert completed.started_at is not None
         assert completed.finished_at is not None
     await engine.dispose()
-

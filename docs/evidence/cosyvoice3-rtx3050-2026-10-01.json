@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-10-01",
+  "accepted": true,
+  "model": {
+    "key": "cosyvoice3-0.5b-2512",
+    "repository": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+    "revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+    "license": "Apache-2.0"
+  },
+  "runtime": {
+    "repository": "QwenAudio/CosyVoice",
+    "revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+    "license": "Apache-2.0",
+    "python": "3.11",
+    "pytorch": "2.3.1+cu121",
+    "precision": "fp16",
+    "batch_size": 1,
+    "tensorrt": false,
+    "vllm": false
+  },
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 3050 OEM",
+    "vram_total_mib": 8192,
+    "platform": "WSL Ubuntu 22.04"
+  },
+  "reference": {
+    "kind": "synthetic system voice",
+    "voice": "Microsoft Heami ko-KR",
+    "natural_person_biometric_data": false,
+    "transcript_matches_fixture": true
+  },
+  "measurement": {
+    "cold_load_seconds": 36.248841,
+    "median_rtf": 0.787175,
+    "mean_korean_cer": 0.122774,
+    "mean_speaker_cosine": 0.888745,
+    "maximum_clipped_sample_ratio": 0.0,
+    "device_vram_idle_mib": 860,
+    "device_vram_peak_mib": 7568,
+    "device_vram_peak_delta_mib": 6708,
+    "torch_peak_allocated_mib": 4425.4365,
+    "device_vram_sample_interval_ms": 250,
+    "long_form": {
+      "audio_seconds": 26.48,
+      "rtf": 0.7043,
+      "korean_cer": 0.02985,
+      "speaker_cosine": 0.9098
+    }
+  },
+  "thresholds": {
+    "cold_load_seconds_max": 180.0,
+    "median_rtf_max": 3.0,
+    "mean_korean_cer_max": 0.35,
+    "mean_speaker_cosine_min": 0.6,
+    "maximum_clipped_sample_ratio_max": 0.001,
+    "device_vram_peak_delta_mib_max": 7600
+  },
+  "corpus": "backend/tests/model/fixtures/korean_tts_acceptance.json"
+}

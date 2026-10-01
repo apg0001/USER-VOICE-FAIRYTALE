@@ -51,4 +51,3 @@ def validate_upload_identity(path: Path, original_filename: str, content_type: s
             "파일 확장자와 실제 미디어 형식이 일치하지 않습니다.",
         )
     return extension
-

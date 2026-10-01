@@ -27,6 +27,7 @@ h2 { font: 400 24px Georgia, 'Times New Roman', serif; margin: 0; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .profile-form { display: grid; gap: 10px; margin: 20px 0 0 66px; padding: 18px; border: 1px solid #ffffff12; background: #151412; }
 .profile-form > input { padding: 11px; color: #e6e1d7; border: 1px solid #ffffff1c; background: #11100f; }
+.profile-form > textarea { min-height: 84px; margin-top: 0; padding: 11px; }
 .profile-form label { color: #aaa59b; font-size: 12px; }
 .profile-form label input { accent-color: #c3a35f; margin-right: 7px; }
 .profile-form button { justify-self: start; padding: 11px 16px; border: 1px solid #c3a35f; color: #c3a35f; background: transparent; cursor: pointer; }

@@ -54,4 +54,9 @@ jobs:
         with:
           context: ./frontend
           push: false
+      - uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.worker-cosyvoice
+          call: check
 

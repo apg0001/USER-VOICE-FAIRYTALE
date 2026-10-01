@@ -1,5 +1,30 @@
 # Text to User Voice Pipeline
 
+## Production adapter (Phase 11)
+
+`CosyVoice3TTSModel` is the first real Korean TTS adapter. The API publishes
+its lightweight descriptor and builds model-specific voice-profile metadata,
+but imports no PyTorch or CosyVoice package. Only the inference worker creates
+the adapter and lazily imports the pinned runtime during `load()`.
+
+Voice registration stores the cleaned reference object's storage key, source
+SHA-256, sample rate, and an optional exact sample transcript. With a
+transcript, synthesis uses CosyVoice3 zero-shot cloning; without it, the
+adapter uses the cross-lingual reference path. Reference paths must resolve
+beneath `STORAGE_PATH`.
+
+```bash
+python -m pip install huggingface-hub==0.36.0
+python scripts/download_cosyvoice3.py
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+The GPU override enables the descriptor and disables mock inference in both
+the API and worker, builds `backend/Dockerfile.worker-cosyvoice`, and bind-mounts
+the ignored local `models/` directory read-only. Candidate rationale, exact
+revisions, licenses, and measured acceptance results are in
+[model-evaluation.md](model-evaluation.md).
+
 Phase 5는 `general_tts`와 `long_form_tts` Job을 실제 WAV 산출물로 만든다. API는 작업을 Queue에 넣고, Worker가 Voice Profile의 모델별 metadata를 읽어 TTS adapter와 pipeline을 실행한다.
 
 ## 처리 흐름

@@ -1,8 +1,22 @@
 services:
-  worker:
+  backend:
     environment:
       USE_MOCK_INFERENCE: "false"
+      ENABLE_COSYVOICE3: "true"
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker-cosyvoice
+    environment:
+      USE_MOCK_INFERENCE: "false"
+      ENABLE_COSYVOICE3: "true"
+      COSYVOICE_RUNTIME_PATH: /opt/cosyvoice
+      COSYVOICE_CHECKPOINT_PATH: /data/models/cosyvoice3-0.5b-2512
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+    volumes:
+      - voice_storage:/data/storage
+      - ./models:/data/models:ro
     deploy:
       resources:
         reservations:

@@ -53,8 +53,7 @@ class VoiceConversionPipeline:
 
         chunk_bytes = sample_rate * self.chunk_seconds * 2
         source_chunks = [
-            frames[offset : offset + chunk_bytes]
-            for offset in range(0, len(frames), chunk_bytes)
+            frames[offset : offset + chunk_bytes] for offset in range(0, len(frames), chunk_bytes)
         ]
         converted: list[bytes] = []
         for index, chunk in enumerate(source_chunks, start=1):
@@ -70,9 +69,7 @@ class VoiceConversionPipeline:
         os.close(descriptor)
         temp_path = Path(temp_name)
         try:
-            await asyncio.to_thread(
-                self._write_wav, temp_path, b"".join(converted), sample_rate
-            )
+            await asyncio.to_thread(self._write_wav, temp_path, b"".join(converted), sample_rate)
             key = await self.storage.put(
                 temp_path, namespace=f"jobs/{job_id}/outputs", suffix="wav"
             )

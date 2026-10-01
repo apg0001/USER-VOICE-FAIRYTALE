@@ -17,4 +17,3 @@ async def list_models(
     return ModelListResponse(
         items=[ModelResponse.model_validate(item) for item in registry.descriptors(capability)]
     )
-

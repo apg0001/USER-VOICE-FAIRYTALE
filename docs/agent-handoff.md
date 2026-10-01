@@ -6,10 +6,14 @@
 
 - 저장소: <https://github.com/apg0001/USER-VOICE-FAIRYTALE>
 - 기준 브랜치: `develop`
-- 완료 Phase: 1–10
-- 다음 이슈: [#11 실제 한국어 TTS 모델 품질·라이선스 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
-- 현재 inference adapter는 모두 계약 검증용 Mock이다. 실제 사람 음색 품질을 제공한다고 주장하면 안 된다.
-- Phase 10 로컬 검증 기준: backend Ruff/mypy 통과, pytest 54 passed·2 skipped, coverage 82%; frontend 6 passed·lint/build 통과; Alembic `base → 0003 → base` 왕복 통과
+- 완료 구현 범위: Phase 1–11. Phase 11 closeout 여부는 아래 커밋이 `develop`에 포함됐는지와 Issue 상태로 확인한다.
+- Phase 11 이슈: [#11 실제 한국어 TTS 모델 품질·라이선스 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
+- Phase 11 branch: `feat/#11-real-tts-adapter`
+- Phase 11 핵심 커밋: `55ba37c` adapter/API/Worker, `4a861ec` 배포·GPU acceptance, `3ec8a15` UI, `bae383f` Ruff 기준 정리
+- Fun-CosyVoice3 0.5B 실제 TTS adapter가 opt-in으로 추가됐다. Mock은 기본 개발/CI 경로로 유지한다.
+- Phase 11 실제 GPU acceptance: RTX 3050 8GB, load 36.249s, device peak delta 6,708 MiB, median RTF 0.787, mean Korean CER 0.123, speaker cosine 0.889, clipping 0; 모든 사전 기준 통과
+- 모델 평가는 `docs/model-evaluation.md`, 다운로드는 `scripts/download_cosyvoice3.py`, 재측정은 `scripts/benchmark_cosyvoice3.py`, 전용 이미지는 `backend/Dockerfile.worker-cosyvoice`가 기준이다.
+- Phase 11 로컬 검증 기준: backend Ruff format/check·mypy 통과, pytest 67 passed·2 skipped, coverage 82%; frontend 6 passed·lint/build 통과
 - Windows 개발 머신에는 ffmpeg와 Docker가 없어 ffmpeg 통합 2개가 skip될 수 있다. Ubuntu GitHub Actions에서 ffmpeg와 Docker build를 검증한다.
 
 작업 시작 시 반드시 다음을 실행한다.
@@ -268,27 +272,23 @@ git status --short
 ```powershell
 git switch develop
 git pull --ff-only origin develop
-git switch -c "feat/#11-real-tts-adapter"
+$issue = 12 # 실제 열린 이슈 번호로 교체
+git switch -c "feat/#${issue}-topic"
 ```
 
-## 12. 다음 작업: Issue #11
+## 12. 현재 closeout과 다음 작업 시작법
 
-Issue #11은 외부 정보와 실제 GPU가 필요한 acceptance 작업이다. 후보를 이름만 보고 채택하지 않는다.
+Phase 11 구현과 실제 GPU acceptance는 완료됐다. 이 문서를 읽는 시점에 `55ba37c`, `4a861ec`, `3ec8a15`가 아직 `develop`에 없거나 Issue #11이 열려 있으면 새 구현을 시작하지 말고 다음 closeout만 끝낸다.
 
-권장 순서:
+1. `feat/#11-real-tts-adapter`의 GitHub Actions가 모두 성공했는지 확인한다.
+2. `develop`을 최신화한 뒤 feature branch를 `--no-ff`로 병합하고 push한다.
+3. `develop` GitHub Actions 성공을 확인한다.
+4. feature/develop run URL, 핵심 커밋, RTX 3050 acceptance 수치를 Issue #11에 기록하고 닫는다.
+5. `git status --short`가 비어 있는지 확인한다.
 
-1. `docs/tts-pipeline.md`, `backend/app/models/tts/base.py`, registry, ModelManager와 Worker image 경계를 읽는다.
-2. OpenVoice V2 + 한국어 base TTS, CosyVoice 등 후보의 공식 repository/model card/paper만 조사한다.
-3. 코드 라이선스와 checkpoint/weights 라이선스를 별도 표로 기록한다. 상업 이용, 재배포, attribution, voice-cloning restriction이 불명확하면 채택하지 않는다.
-4. 한국어 고정 corpus와 평가 protocol을 먼저 확정한다. 숫자 기준 없이 청취 인상만으로 결정하지 않는다.
-5. 동일 GPU에서 load time, peak VRAM, real-time factor, 실패율을 측정한다. GPU 정보와 precision/batch/chunk 조건을 함께 기록한다.
-6. 발음/숫자/영문 혼용/장문 경계와 화자 유사도 평가를 분리한다. 동의된 음성만 쓴다.
-7. 채택 adapter는 `TTSModel` 계약 뒤에 두고 무거운 dependency는 별도 Worker image/optional dependency에만 넣는다.
-8. Mock과 실제 adapter에 같은 contract suite를 적용한다. API image에서 실제 model package가 import되지 않는 테스트를 유지한다.
-9. model key/version/source/checkpoint hash/license를 provenance와 배포 문서에 남긴다.
-10. 실제 GPU runner가 없으면 코드·Mock으로 통과했다고 acceptance 완료로 표시하지 말고, 무엇이 미검증인지 Issue에 명시한다.
+Phase 11의 모델 선택 근거와 재현 절차는 [model-evaluation.md](model-evaluation.md), 파이프라인 경계는 [tts-pipeline.md](tts-pipeline.md), 정제된 실측 증빙은 [evidence/cosyvoice3-rtx3050-2026-10-01.json](evidence/cosyvoice3-rtx3050-2026-10-01.json)에 있다. 실제 weight와 음성 sample은 Git에 넣지 않는다.
 
-외부 모델 조사에는 최신 정보가 필요하므로 공식 출처를 다시 확인한다. 다운로드 전에 license와 파일 크기, 저장 위치를 검토한다. 대형 weights를 Git에 commit하지 않는다.
+closeout이 끝났다면 `gh issue list --state open`이 다음 작업의 유일한 기준이다. 열린 Phase 이슈가 없으면 임의로 범위를 만들지 말고 새 이슈/요구사항을 기다린다. 새 작업은 상세 이슈 확인 → `develop` 최신화 → `<type>/#<number>-<topic>` branch → 구현·검증·문서 → feature CI → `--no-ff` develop merge → develop CI → 이슈 종료 순서로 진행한다.
 
 ## 13. 알려진 기술 부채와 함정
 
