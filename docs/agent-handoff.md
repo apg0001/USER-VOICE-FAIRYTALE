@@ -311,6 +311,7 @@ closeout이 끝났다면 `gh issue list --state open`이 다음 작업의 유일
 - 사용자 삭제와 실행 중 GPU kernel은 즉시 중단되지 않을 수 있다. Worker checkpoint가 cancel을 확인하고 생성 output을 삭제한다.
 - 기존 output의 null expiry는 cleanup 시 created_at 기반으로 처리한다.
 - 실제 인증 gateway는 repository에 포함되지 않는다. trusted proxy 설정만으로 public auth가 완성되는 것은 아니다.
+- Worker·scheduler 로그 redaction은 `celery_app` import 시 `configure_logging`으로 적용된다(#17 전에는 미적용으로 입력 원문이 traceback에 노출). 새 process entrypoint를 추가하면 같은 설정을 호출한다.
 - 실제 GPU stack e2e(2026-10-23, #16)는 TTS·Speech VC 모두 성공했다. 8 GB 데스크톱 GPU에서는 `GPU_VRAM_RESERVE_MB=256`이 필요하다. upstream runtime 로그는 우리 redaction을 거치지 않으니, 새 runtime을 추가하면 실제 Job 후 Worker 로그에서 입력 원문을 grep한다.
 - API image와 CI 기본은 Python 3.12, CosyVoice Worker image는 3.11이다. 3.12 전용 문법(예: `array[int]` 런타임 subscript)은 Worker 시작 시 import를 깨뜨린다. backend CI는 두 버전 matrix로 돈다.
 - 연구용 전제 모델(Demucs 등)은 opt-in 플래그, descriptor `usage` metadata, 문서의 라이선스 상태를 함께 유지한다. 상업 배포 언급이 나오면 다시 검토한다.
