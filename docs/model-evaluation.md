@@ -125,11 +125,43 @@ fixture text. Thresholds were fixed before measurement:
 | Peak device VRAM above idle baseline | <= 7,600 MiB |
 | Maximum clipped-sample ratio | <= 0.001 |
 
-Status: **not yet measured.** The first attempt on 2026-10-23 ran with less
-than 1.2 GB of free host memory, so the WSL VM paged heavily and cold load
-alone took about six minutes. That run was stopped and is not evidence.
-Re-run it with at least 6 GB of free host RAM and no other process holding the
-GPU:
+### Accepted measurement
+
+Run date: 2026-10-23, same hardware, environment, and pins as the TTS run.
+
+| Metric | Result | Gate |
+|---|---:|---:|
+| Cold load | 135.017 s | pass |
+| Peak VRAM above idle baseline | 5,418 MiB | pass |
+| Median RTF | 1.056 | pass |
+| Mean Korean CER | 0.162 | pass |
+| Mean target speaker cosine | 0.878 | pass |
+| Mean target cosine gain over source | 0.384 | pass |
+| Max clipped-sample ratio | 0.000 | pass |
+
+| Direction | Mean CER | Source→target cosine | Output→target cosine | Mean RTF |
+|---|---:|---:|---:|---:|
+| `heami_to_zira` | 0.160 | 0.537 | 0.855 | 2.827 |
+| `shifted_to_heami` | 0.164 | 0.451 | 0.900 | 0.608 |
+
+The host had only 1.1–2.2 GB of free RAM during this run and paged at about
+3,400 pages/s while the model loaded. Cold load (135 s versus 36 s in the TTS
+run) and the first direction's RTF include that paging; the first case alone
+had RTF 8.08. The second direction ran warm at mean RTF 0.608, which is the
+better estimate of steady-state cost. Treat the cold-load number as an upper
+bound, not a regression.
+
+CER is highest on the number cases (0.28–0.38) because Whisper writes Arabic
+numerals and the Hangul-only normalization drops them; the TTS run used the
+same method. Long-form inputs ran through three 10 s chunks with CER 0.045 in
+both directions, so chunk boundaries did not damage content. VRAM peaked below
+the TTS figure, so the shared descriptor keeps the 6,708 MiB admission
+estimate. The sanitized summary is
+`docs/evidence/cosyvoice3-speech-vc-rtx3050-2026-10-23.json`.
+
+The first attempt on 2026-10-23 was stopped: with under 1.2 GB of free host RAM
+the model took about six minutes to load. Run with at least 6 GB of free host
+RAM and no other process holding the GPU:
 
 ```bash
 # Zira target reference: Windows SAPI, 24 kHz mono 16-bit, text from the fixture

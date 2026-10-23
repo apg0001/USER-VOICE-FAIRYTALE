@@ -2,7 +2,7 @@
 
 사용자가 동의하여 등록한 음색으로 텍스트, 말, 노래를 변환하는 확장 가능한 Voice AI Platform입니다. API 서버와 GPU 추론 Worker를 분리하고, 장시간 작업을 Queue 기반 Job으로 관리하는 것을 핵심 원칙으로 삼습니다.
 
-> 현재 범위: **Phase 11 실제 한국어 TTS**. 기존 Mock adapter와 함께, 고정된 Fun-CosyVoice3 0.5B 체크포인트를 워커 전용 실제 adapter로 선택할 수 있습니다. RTX 3050 8GB에서 한국어 고정 코퍼스 acceptance를 통과했으며 API 이미지는 무거운 추론 의존성을 포함하지 않습니다. Phase 12에서는 같은 체크포인트로 실제 Speech VC를 연결하고 있으며 GPU acceptance가 끝나지 않았습니다.
+> 현재 범위: **Phase 12 실제 한국어 TTS·Speech VC**. 기존 Mock adapter와 함께, 고정된 Fun-CosyVoice3 0.5B 체크포인트를 워커 전용 실제 adapter로 선택할 수 있습니다. RTX 3050 8GB에서 한국어 고정 코퍼스 acceptance를 통과했으며 API 이미지는 무거운 추론 의존성을 포함하지 않습니다. Phase 12에서 같은 체크포인트로 실제 Speech VC를 연결해 RTX 3050 acceptance(평균 CER 0.162, 목표 화자 cosine 0.878)를 통과했습니다.
 
 ## 주요 기능
 
@@ -301,7 +301,7 @@ curl -X POST http://localhost:8000/api/jobs \
 - [x] Phase 9: SSE/ETA/Queue/History UX
 - [x] Phase 10: logging/monitoring/cleanup/security/deploy
 - [x] Phase 11: licensed real Korean TTS adapter and GPU acceptance
-- [ ] Phase 12: CosyVoice3 real speech VC adapter and GPU acceptance (#13)
+- [x] Phase 12: CosyVoice3 real speech VC adapter and GPU acceptance (#13)
 
 ## Development Workflow
 

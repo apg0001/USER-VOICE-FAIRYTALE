@@ -1,6 +1,6 @@
 # Speech Voice Conversion Pipeline
 
-Phase 6는 목표 발화의 길이와 timing을 유지하면서 선택한 Voice Profile을 adapter에 적용하는 Worker pipeline을 제공한다. 현재 Mock adapter는 계약과 결과 수명주기를 검증하며 실제 사람 음색을 합성하지 않는다.
+Phase 6는 목표 발화의 길이와 timing을 유지하면서 선택한 Voice Profile을 adapter에 적용하는 Worker pipeline을 제공한다. Mock adapter는 개발/CI에서 계약과 결과 수명주기를 검증하며 실제 음색을 합성하지 않는다. 실제 변환은 Phase 12의 CosyVoice3 adapter가 담당한다.
 
 ## 입력부터 결과까지
 
@@ -39,7 +39,7 @@ POST /api/jobs (speech_voice_conversion)
 - chunk는 독립 변환되며 경계 crossfade는 아직 없다.
 - Worker는 TTS와 Speech VC가 같은 lease role(`cosyvoice3`)을 쓰게 해 runtime을 한 번만 load한다. role을 나누면 8 GB GPU에서 모드를 바꿀 때마다 eviction과 재load가 일어난다.
 
-Acceptance 기준과 결과는 [model-evaluation.md](model-evaluation.md#korean-speech-vc-acceptance-phase-12)에 있다. 기준을 통과하기 전에는 운영 기본 경로로 쓰지 않는다.
+RTX 3050 8 GB acceptance(2026-10-23)를 통과했다: 평균 CER 0.162, 목표 화자 cosine 0.878(source 대비 +0.384), median RTF 1.056, VRAM 5,418 MiB. 측정 조건과 방향별 수치는 [model-evaluation.md](model-evaluation.md#korean-speech-vc-acceptance-phase-12)에 있다.
 
 ## API 예시
 
