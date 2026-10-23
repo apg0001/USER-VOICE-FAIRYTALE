@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "source": {
+    "dataset": "MUSDB18-7-WAV test split (CC BY 4.0)",
+    "stem": "vocals.wav",
+    "min_voiced_ratio": 0.3
+  },
+  "targets": ["synthetic-heami-ko-kr-v1", "synthetic-zira-en-us-v1"],
+  "verifiers": {
+    "speaker": "Resemblyzer GE2E (independent of the CAM++ style encoder used by Seed-VC)",
+    "pitch": "WORLD harvest (independent of the RMVPE extractor used by Seed-VC)"
+  },
+  "pipeline_tracks": 5,
+  "thresholds": {
+    "target_cosine_gain_mean_min": 0.10,
+    "rpa50_mean_min": 0.75,
+    "rtf_median_max": 2.0,
+    "pipeline_rtf_max": 3.0,
+    "load_seconds_max": 180.0,
+    "pipeline_peak_vram_mb_max": 7600,
+    "clipped_sample_ratio_max": 0.001
+  }
+}
