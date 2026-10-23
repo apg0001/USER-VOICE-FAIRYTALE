@@ -2,7 +2,9 @@
 
 ## Production adapter (Phase 11)
 
-`CosyVoice3TTSModel` is the first real Korean TTS adapter. The API publishes
+`CosyVoice3Model` is the first real Korean TTS adapter. Since Phase 12 the same
+adapter also implements speech voice conversion; see
+[speech-voice-conversion.md](speech-voice-conversion.md). The API publishes
 its lightweight descriptor and builds model-specific voice-profile metadata,
 but imports no PyTorch or CosyVoice package. Only the inference worker creates
 the adapter and lazily imports the pinned runtime during `load()`.

@@ -13,7 +13,7 @@ from app.models.tts.cosyvoice import (
     COSYVOICE_MODEL_REVISION,
     COSYVOICE_RUNTIME_REVISION,
     REQUIRED_MODEL_FILES,
-    CosyVoice3TTSModel,
+    CosyVoice3Model,
     CosyVoiceRuntimeError,
 )
 from app.models.tts.mock import MockTTSModel
@@ -42,8 +42,9 @@ class FakeTensor:
 class FakeRuntime:
     sample_rate = 24_000
 
-    def __init__(self) -> None:
+    def __init__(self, vc_samples: int = 3) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        self.vc_samples = vc_samples
 
     def inference_zero_shot(
         self,
@@ -65,6 +66,18 @@ class FakeRuntime:
     ) -> list[dict[str, FakeTensor]]:
         self.calls.append(("cross_lingual", (text, prompt_wav, stream)))
         return [{"tts_speech": FakeTensor([0.0, 0.25])}]
+
+    def inference_vc(
+        self,
+        source_wav: str,
+        prompt_wav: str,
+        *,
+        stream: bool,
+    ) -> list[dict[str, FakeTensor]]:
+        with wave.open(source_wav, "rb") as source:
+            source_frames = source.getnframes()
+        self.calls.append(("vc", (source_wav, prompt_wav, stream, source_frames)))
+        return [{"tts_speech": FakeTensor([0.5] * self.vc_samples)}]
 
 
 def prepare_model_files(tmp_path: Path) -> tuple[Settings, Path]:
@@ -121,7 +134,7 @@ def test_tts_adapters_share_lifecycle_and_audio_contract(tmp_path: Path, adapter
     else:
         settings, reference = prepare_model_files(tmp_path)
         runtime = FakeRuntime()
-        model = CosyVoice3TTSModel(settings, runtime_factory=lambda *_args: runtime)
+        model = CosyVoice3Model(settings, runtime_factory=lambda *_args: runtime)
         profile = {
             "reference_storage_key": str(reference.relative_to(settings.storage_path)),
             "prompt_text": "한국어 기준 문장입니다.",
@@ -142,7 +155,7 @@ def test_tts_adapters_share_lifecycle_and_audio_contract(tmp_path: Path, adapter
 def test_cosyvoice_contract_and_zero_shot_path(tmp_path: Path) -> None:
     settings, reference = prepare_model_files(tmp_path)
     runtime = FakeRuntime()
-    model = CosyVoice3TTSModel(settings, runtime_factory=lambda *_args: runtime)
+    model = CosyVoice3Model(settings, runtime_factory=lambda *_args: runtime)
 
     model.load()
     audio = model.synthesize(
@@ -166,7 +179,7 @@ def test_cosyvoice_contract_and_zero_shot_path(tmp_path: Path) -> None:
 def test_cosyvoice_cross_lingual_and_storage_boundary(tmp_path: Path) -> None:
     settings, reference = prepare_model_files(tmp_path)
     runtime = FakeRuntime()
-    model = CosyVoice3TTSModel(settings, runtime_factory=lambda *_args: runtime)
+    model = CosyVoice3Model(settings, runtime_factory=lambda *_args: runtime)
     model.load()
 
     audio = model.synthesize(
@@ -183,7 +196,7 @@ def test_cosyvoice_cross_lingual_and_storage_boundary(tmp_path: Path) -> None:
 def test_cosyvoice_escapes_reserved_tokens_in_user_text(tmp_path: Path) -> None:
     settings, reference = prepare_model_files(tmp_path)
     runtime = FakeRuntime()
-    model = CosyVoice3TTSModel(settings, runtime_factory=lambda *_args: runtime)
+    model = CosyVoice3Model(settings, runtime_factory=lambda *_args: runtime)
     model.load()
 
     model.synthesize(
@@ -203,7 +216,7 @@ def test_cosyvoice_rejects_unpinned_manifest(tmp_path: Path) -> None:
     manifest = settings.cosyvoice_checkpoint_path / "voice-model-manifest.json"
     manifest.write_text(json.dumps({"model_revision": "moving-main"}), encoding="utf-8")
 
-    model = CosyVoice3TTSModel(settings, runtime_factory=lambda *_args: FakeRuntime())
+    model = CosyVoice3Model(settings, runtime_factory=lambda *_args: FakeRuntime())
     with pytest.raises(CosyVoiceRuntimeError, match="provenance"):
         model.load()
 
@@ -231,3 +244,47 @@ def test_api_import_does_not_load_worker_inference_packages() -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("generated_samples", [2, 4, 9])
+def test_cosyvoice_speech_vc_preserves_source_frame_count(
+    tmp_path: Path, generated_samples: int
+) -> None:
+    settings, reference = prepare_model_files(tmp_path)
+    runtime = FakeRuntime(vc_samples=generated_samples)
+    model = CosyVoice3Model(settings, runtime_factory=lambda *_args: runtime)
+    profile = {"reference_storage_key": str(reference.relative_to(settings.storage_path))}
+    source = b"\x10\x00" * 4
+
+    with pytest.raises(RuntimeError, match="loaded"):
+        model.convert(source, 24_000, profile)
+    model.load()
+    converted = model.convert(source, 24_000, profile)
+
+    assert len(converted) == len(source)
+    kept = min(generated_samples, 4)
+    assert converted[: kept * 2] == round(0.5 * 32_767).to_bytes(2, "little") * kept
+    assert converted[kept * 2 :] == b"\0" * (len(source) - kept * 2)
+    source_wav, prompt_wav, stream, source_frames = runtime.calls[0][1]
+    assert prompt_wav == str(reference)
+    assert stream is False
+    assert source_frames == 4
+    assert not Path(source_wav).exists()
+
+
+def test_cosyvoice_speech_vc_rejects_mismatched_rate_and_missing_reference(
+    tmp_path: Path,
+) -> None:
+    settings, reference = prepare_model_files(tmp_path)
+    runtime = FakeRuntime()
+    model = CosyVoice3Model(settings, runtime_factory=lambda *_args: runtime)
+    model.load()
+    profile = {"reference_storage_key": str(reference.relative_to(settings.storage_path))}
+
+    with pytest.raises(CosyVoiceRuntimeError, match="24000 Hz"):
+        model.convert(b"\0\0", 16_000, profile)
+    with pytest.raises(CosyVoiceRuntimeError, match="no CosyVoice reference"):
+        model.convert(b"\0\0", 24_000, {})
+    with pytest.raises(CosyVoiceRuntimeError, match="invalid or missing"):
+        model.convert(b"\0\0", 24_000, {"reference_storage_key": "../outside.wav"})
+    assert runtime.calls == []

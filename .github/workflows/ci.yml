@@ -10,6 +10,10 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 3.11 is the CosyVoice worker image runtime; 3.12 is the API image.
+        python-version: ["3.11", "3.12"]
     defaults:
       run:
         working-directory: backend
@@ -17,7 +21,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install -e ".[dev]"
       - run: python -m ruff check app tests

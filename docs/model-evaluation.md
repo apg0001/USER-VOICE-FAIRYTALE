@@ -97,6 +97,81 @@ Generated WAV files and `report.json` live under `models/acceptance/` and are
 ignored by Git. A sanitized summary of the accepted run is committed at
 `docs/evidence/cosyvoice3-rtx3050-2026-10-01.json`.
 
+## Korean speech VC acceptance (Phase 12)
+
+Speech VC reuses the adopted checkpoint through the pinned runtime's
+`inference_vc`, so the license and provenance review above applies unchanged.
+The corpus is `backend/tests/model/fixtures/korean_vc_acceptance.json` and
+runs the real `VoiceConversionPipeline` (10 s chunks) against two synthetic
+targets in two directions:
+
+| Direction | Source | Target reference |
+|---|---|---|
+| `heami_to_zira` | The six accepted Phase 11 outputs (Heami timbre, known Korean text) | Microsoft Zira en-US |
+| `shifted_to_heami` | The same outputs pitch-shifted by -5 semitones | Microsoft Heami ko-KR |
+
+Speaker change is measured as the gain in CAM++ cosine to the target from the
+source to the converted output, so a target that already sounds like the
+source cannot pass. Content preservation is Whisper-small CER against the
+fixture text. Thresholds were fixed before measurement:
+
+| Metric | Acceptance threshold |
+|---|---:|
+| Mean Korean CER | <= 0.35 |
+| Mean target speaker cosine | >= 0.55 |
+| Mean target cosine gain over source | >= 0.15 |
+| Median RTF | <= 1.50 |
+| Cold model load | <= 180 s |
+| Peak device VRAM above idle baseline | <= 7,600 MiB |
+| Maximum clipped-sample ratio | <= 0.001 |
+
+### Accepted measurement
+
+Run date: 2026-10-23, same hardware, environment, and pins as the TTS run.
+
+| Metric | Result | Gate |
+|---|---:|---:|
+| Cold load | 135.017 s | pass |
+| Peak VRAM above idle baseline | 5,418 MiB | pass |
+| Median RTF | 1.056 | pass |
+| Mean Korean CER | 0.162 | pass |
+| Mean target speaker cosine | 0.878 | pass |
+| Mean target cosine gain over source | 0.384 | pass |
+| Max clipped-sample ratio | 0.000 | pass |
+
+| Direction | Mean CER | Source→target cosine | Output→target cosine | Mean RTF |
+|---|---:|---:|---:|---:|
+| `heami_to_zira` | 0.160 | 0.537 | 0.855 | 2.827 |
+| `shifted_to_heami` | 0.164 | 0.451 | 0.900 | 0.608 |
+
+The host had only 1.1–2.2 GB of free RAM during this run and paged at about
+3,400 pages/s while the model loaded. Cold load (135 s versus 36 s in the TTS
+run) and the first direction's RTF include that paging; the first case alone
+had RTF 8.08. The second direction ran warm at mean RTF 0.608, which is the
+better estimate of steady-state cost. Treat the cold-load number as an upper
+bound, not a regression.
+
+CER is highest on the number cases (0.28–0.38) because Whisper writes Arabic
+numerals and the Hangul-only normalization drops them; the TTS run used the
+same method. Long-form inputs ran through three 10 s chunks with CER 0.045 in
+both directions, so chunk boundaries did not damage content. VRAM peaked below
+the TTS figure, so the shared descriptor keeps the 6,708 MiB admission
+estimate. The sanitized summary is
+`docs/evidence/cosyvoice3-speech-vc-rtx3050-2026-10-23.json`.
+
+The first attempt on 2026-10-23 was stopped: with under 1.2 GB of free host RAM
+the model took about six minutes to load. Run with at least 6 GB of free host
+RAM and no other process holding the GPU:
+
+```bash
+# Zira target reference: Windows SAPI, 24 kHz mono 16-bit, text from the fixture
+python scripts/benchmark_cosyvoice3_vc.py   --model ~/cosyvoice3-0.5b-2512 --runtime ~/cosyvoice-runtime
+```
+
+The script expects `models/acceptance/synthetic-heami-ko-kr-v1.wav`,
+`models/acceptance/vc/synthetic-zira-en-us-v1.wav`, and the Phase 11 outputs
+in `models/acceptance/cosyvoice3/`, and writes `models/acceptance/vc/report.json`.
+
 ## Provenance and release duties
 
 - Never commit model weights or voice samples.

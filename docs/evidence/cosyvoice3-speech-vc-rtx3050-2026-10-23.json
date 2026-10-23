@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-10-23",
+  "capability": "speech_voice_conversion",
+  "accepted": true,
+  "model": {
+    "key": "cosyvoice3-0.5b-2512",
+    "repository": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+    "revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+    "license": "Apache-2.0"
+  },
+  "runtime": {
+    "repository": "QwenAudio/CosyVoice",
+    "revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+    "license": "Apache-2.0",
+    "python": "3.11",
+    "pytorch": "2.3.1+cu121",
+    "precision": "fp16",
+    "batch_size": 1,
+    "tensorrt": false,
+    "vllm": false
+  },
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 3050 OEM",
+    "vram_total_mib": 8192,
+    "platform": "WSL Ubuntu 22.04"
+  },
+  "targets": [
+    {
+      "id": "synthetic-zira-en-us-v1",
+      "kind": "synthetic system voice",
+      "natural_person_biometric_data": false
+    },
+    {
+      "id": "synthetic-heami-ko-kr-v1",
+      "kind": "synthetic system voice",
+      "natural_person_biometric_data": false
+    }
+  ],
+  "measurement": {
+    "cold_load_seconds": 135.01734,
+    "median_rtf": 1.055617,
+    "mean_korean_cer": 0.162046,
+    "mean_target_cosine": 0.877687,
+    "mean_target_cosine_gain": 0.383754,
+    "maximum_clipped_sample_ratio": 0.0,
+    "device_vram_idle_mib": 1090,
+    "device_vram_peak_mib": 6508,
+    "device_vram_peak_delta_mib": 5418,
+    "torch_peak_allocated_mib": 4078.3267,
+    "device_vram_sample_interval_ms": 250,
+    "by_direction": {
+      "heami_to_zira": {
+        "rtf": 2.826507,
+        "cer": 0.160336,
+        "target_cosine": 0.855048,
+        "target_cosine_gain": 0.318453,
+        "clipped_sample_ratio": 0.0
+      },
+      "shifted_to_heami": {
+        "rtf": 0.608022,
+        "cer": 0.163756,
+        "target_cosine": 0.900327,
+        "target_cosine_gain": 0.449055,
+        "clipped_sample_ratio": 0.0
+      }
+    }
+  },
+  "checks": {
+    "load_seconds": true,
+    "peak_vram_mb": true,
+    "rtf_median": true,
+    "cer_mean": true,
+    "target_cosine_mean": true,
+    "target_cosine_gain_mean": true,
+    "clipping": true,
+    "finite": true
+  },
+  "cases": [
+    {
+      "direction": "heami_to_zira",
+      "id": "native_numbers",
+      "audio_seconds": 5.48,
+      "chunk_count": 1,
+      "rtf": 8.0757,
+      "korean_cer": 0.10345,
+      "source_target_cosine": 0.5211,
+      "target_cosine": 0.8593
+    },
+    {
+      "direction": "heami_to_zira",
+      "id": "sino_numbers",
+      "audio_seconds": 6.64,
+      "chunk_count": 1,
+      "rtf": 2.2043,
+      "korean_cer": 0.35294,
+      "source_target_cosine": 0.4774,
+      "target_cosine": 0.8346
+    },
+    {
+      "direction": "heami_to_zira",
+      "id": "pronunciation",
+      "audio_seconds": 4.48,
+      "chunk_count": 1,
+      "rtf": 2.6191,
+      "korean_cer": 0.375,
+      "source_target_cosine": 0.5674,
+      "target_cosine": 0.8816
+    },
+    {
+      "direction": "heami_to_zira",
+      "id": "dialogue",
+      "audio_seconds": 8.24,
+      "chunk_count": 1,
+      "rtf": 1.4625,
+      "korean_cer": 0.05882,
+      "source_target_cosine": 0.5196,
+      "target_cosine": 0.8313
+    },
+    {
+      "direction": "heami_to_zira",
+      "id": "loanwords",
+      "audio_seconds": 6.0,
+      "chunk_count": 1,
+      "rtf": 1.9488,
+      "korean_cer": 0.02703,
+      "source_target_cosine": 0.554,
+      "target_cosine": 0.81
+    },
+    {
+      "direction": "heami_to_zira",
+      "id": "long_form",
+      "audio_seconds": 26.48,
+      "chunk_count": 3,
+      "rtf": 0.6487,
+      "korean_cer": 0.04478,
+      "source_target_cosine": 0.5801,
+      "target_cosine": 0.9135
+    },
+    {
+      "direction": "shifted_to_heami",
+      "id": "native_numbers",
+      "audio_seconds": 5.48,
+      "chunk_count": 1,
+      "rtf": 2.1146,
+      "korean_cer": 0.27586,
+      "source_target_cosine": 0.4483,
+      "target_cosine": 0.8884
+    },
+    {
+      "direction": "shifted_to_heami",
+      "id": "sino_numbers",
+      "audio_seconds": 6.64,
+      "chunk_count": 1,
+      "rtf": 0.3211,
+      "korean_cer": 0.38235,
+      "source_target_cosine": 0.4634,
+      "target_cosine": 0.8736
+    },
+    {
+      "direction": "shifted_to_heami",
+      "id": "pronunciation",
+      "audio_seconds": 4.48,
+      "chunk_count": 1,
+      "rtf": 0.3245,
+      "korean_cer": 0.16667,
+      "source_target_cosine": 0.4465,
+      "target_cosine": 0.9117
+    },
+    {
+      "direction": "shifted_to_heami",
+      "id": "dialogue",
+      "audio_seconds": 8.24,
+      "chunk_count": 1,
+      "rtf": 0.2734,
+      "korean_cer": 0.05882,
+      "source_target_cosine": 0.4414,
+      "target_cosine": 0.8986
+    },
+    {
+      "direction": "shifted_to_heami",
+      "id": "loanwords",
+      "audio_seconds": 6.0,
+      "chunk_count": 1,
+      "rtf": 0.3813,
+      "korean_cer": 0.05405,
+      "source_target_cosine": 0.4478,
+      "target_cosine": 0.9071
+    },
+    {
+      "direction": "shifted_to_heami",
+      "id": "long_form",
+      "audio_seconds": 26.48,
+      "chunk_count": 3,
+      "rtf": 0.2332,
+      "korean_cer": 0.04478,
+      "source_target_cosine": 0.4602,
+      "target_cosine": 0.9226
+    }
+  ],
+  "thresholds": {
+    "cer_mean_max": 0.35,
+    "target_cosine_mean_min": 0.55,
+    "target_cosine_gain_mean_min": 0.15,
+    "rtf_median_max": 1.5,
+    "load_seconds_max": 180.0,
+    "peak_vram_mb_max": 7600,
+    "clipped_sample_ratio_max": 0.001
+  },
+  "corpus": "backend/tests/model/fixtures/korean_vc_acceptance.json",
+  "environment_notes": {
+    "host_memory_pressure": true,
+    "detail": "Host had about 1.1-2.2 GB available RAM and ~3,400 pages/s during cold load; load and the first (heami_to_zira) direction ran while the WSL VM was paging. The shifted_to_heami direction ran warm.",
+    "warm_direction_mean_rtf": 0.608022
+  }
+}
