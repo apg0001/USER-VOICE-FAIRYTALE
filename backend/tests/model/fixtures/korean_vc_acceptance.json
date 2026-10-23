@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_corpus": "korean_tts_acceptance.json",
+  "source_note": "Sources are the accepted Phase 11 CosyVoice3 outputs (Heami timbre). Their fixture text is the expected transcript.",
+  "targets": [
+    {
+      "id": "synthetic-zira-en-us-v1",
+      "consent_basis": "locally generated synthetic system voice; no natural-person biometric data",
+      "voice": "Microsoft Zira en-US",
+      "text": "Every evening, my grandmother would open an old storybook and read aloud by the window, while the rain tapped softly against the glass."
+    },
+    {
+      "id": "synthetic-heami-ko-kr-v1",
+      "consent_basis": "locally generated synthetic system voice; no natural-person biometric data",
+      "voice": "Microsoft Heami ko-KR"
+    }
+  ],
+  "directions": [
+    {
+      "id": "heami_to_zira",
+      "target": "synthetic-zira-en-us-v1",
+      "source_pitch_semitones": 0
+    },
+    {
+      "id": "shifted_to_heami",
+      "target": "synthetic-heami-ko-kr-v1",
+      "source_pitch_semitones": -5
+    }
+  ],
+  "thresholds": {
+    "cer_mean_max": 0.35,
+    "target_cosine_mean_min": 0.55,
+    "target_cosine_gain_mean_min": 0.15,
+    "rtf_median_max": 1.5,
+    "load_seconds_max": 180.0,
+    "peak_vram_mb_max": 7600,
+    "clipped_sample_ratio_max": 0.001
+  }
+}
