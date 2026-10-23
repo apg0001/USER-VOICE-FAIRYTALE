@@ -6,7 +6,8 @@
 
 - 저장소: <https://github.com/apg0001/USER-VOICE-FAIRYTALE>
 - 기준 브랜치: `develop`
-- 완료 구현 범위: Phase 1–11. Phase 11 closeout 여부는 아래 커밋이 `develop`에 포함됐는지와 Issue 상태로 확인한다.
+- 완료 구현 범위: Phase 1–11 (`develop`, Issue #11 종료)
+- 진행 중: [#13 Phase 12 CosyVoice3 실제 Speech VC](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/13), branch `feat/#13-real-speech-vc`. adapter·Worker·테스트·benchmark는 구현됐고 RTX 3050 acceptance만 남았다. 아래 12절 참고.
 - Phase 11 이슈: [#11 실제 한국어 TTS 모델 품질·라이선스 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
 - Phase 11 branch: `feat/#11-real-tts-adapter`
 - Phase 11 핵심 커밋: `55ba37c` adapter/API/Worker, `4a861ec` 배포·GPU acceptance, `3ec8a15` UI, `bae383f` Ruff 기준 정리
@@ -61,7 +62,7 @@ FastAPI는 인증 경계, schema, owner 검증, Job/파일 metadata만 처리한
 
 아직 구현되지 않은 동작:
 
-- 실제 TTS/VC/SVC/분리 model adapter와 GPU acceptance
+- 실제 Singing VC와 보컬 분리 model adapter (Speech VC는 Phase 12 acceptance 대기)
 - 실제 IdP 또는 인증 gateway 배포 구성
 - S3/MinIO storage adapter, at-rest encryption, multipart/checksum
 - 실제 비가청 watermark provider와 abuse moderation sink/API
@@ -278,6 +279,15 @@ git switch -c "feat/#${issue}-topic"
 
 ## 12. 현재 closeout과 다음 작업 시작법
 
+### Phase 12 (#13) 남은 일
+
+1. host 여유 RAM 6 GB 이상, GPU를 점유한 다른 process 없음을 확인한다. 2026-10-23 첫 시도는 host 여유 메모리가 1.2 GB 미만이라 WSL이 페이징하며 load만 약 6분 걸려 중단했다. 이 수치는 증빙이 아니다.
+2. WSL에서 `scripts/benchmark_cosyvoice3_vc.py`를 실행한다 (절차: [model-evaluation.md](model-evaluation.md#korean-speech-vc-acceptance-phase-12)).
+3. 통과하면 정제 증빙을 `docs/evidence/`에 커밋하고 model-evaluation 표를 결과로 바꾼다. 실패하면 기준을 사후에 낮추지 말고 원인과 함께 기록한 뒤 VC capability를 descriptor에서 빼고 이슈에 남긴다.
+4. feature CI(backend 3.11/3.12 matrix, frontend, docker) → `--no-ff` develop merge → develop CI → #13 종료.
+
+### Phase 11 기록
+
 Phase 11 구현과 실제 GPU acceptance는 완료됐다. 이 문서를 읽는 시점에 `55ba37c`, `4a861ec`, `3ec8a15`가 아직 `develop`에 없거나 Issue #11이 열려 있으면 새 구현을 시작하지 말고 다음 closeout만 끝낸다.
 
 1. `feat/#11-real-tts-adapter`의 GitHub Actions가 모두 성공했는지 확인한다.
@@ -303,6 +313,8 @@ closeout이 끝났다면 `gh issue list --state open`이 다음 작업의 유일
 - 사용자 삭제와 실행 중 GPU kernel은 즉시 중단되지 않을 수 있다. Worker checkpoint가 cancel을 확인하고 생성 output을 삭제한다.
 - 기존 output의 null expiry는 cleanup 시 created_at 기반으로 처리한다.
 - 실제 인증 gateway는 repository에 포함되지 않는다. trusted proxy 설정만으로 public auth가 완성되는 것은 아니다.
+- API image와 CI 기본은 Python 3.12, CosyVoice Worker image는 3.11이다. 3.12 전용 문법(예: `array[int]` 런타임 subscript)은 Worker 시작 시 import를 깨뜨린다. backend CI는 두 버전 matrix로 돈다.
+- CosyVoice3 descriptor 하나가 TTS와 Speech VC capability를 함께 가진다. Worker lease role은 `_lease_role`에서 `cosyvoice3`로 합쳐져 runtime을 공유한다.
 
 ## 14. 문서 읽기 순서
 

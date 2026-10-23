@@ -28,6 +28,19 @@ POST /api/jobs (speech_voice_conversion)
 
 실제 모델에서 억양·pitch·energy가 얼마나 보존되는지는 모델별 acceptance 결과에 추가해야 하며 보장하지 않은 속성을 API에 표시해서는 안 된다.
 
+## 실제 adapter: CosyVoice3 (Phase 12)
+
+`CosyVoice3Model`은 TTS와 같은 고정 runtime·checkpoint로 `convert`를 구현한다. 새 weight, 라이선스, Worker image가 추가되지 않는다. `ENABLE_COSYVOICE3=true`일 때 descriptor `cosyvoice3-0.5b-2512`가 `speech_voice_conversion` capability를 함께 공개한다.
+
+- 각 10초 chunk를 임시 WAV로 쓰고 `inference_vc(source, Voice Profile reference)`를 호출한 뒤 임시 파일을 즉시 삭제한다. upstream speech tokenizer는 30초 이하만 받으므로 chunk 크기를 늘리면 안 된다.
+- 입력은 정제 단계와 같은 24 kHz여야 하며 다르면 Job을 실패시킨다. 출력도 24 kHz이므로 리샘플링하지 않는다.
+- speech token이 25 Hz라 출력 길이가 최대 한 token(40 ms)쯤 어긋난다. adapter가 source frame 수에 맞춰 자르거나 무음으로 채워 pipeline의 frame 보존 계약을 지킨다.
+- 억양·pitch는 source token에서 오고 음색은 reference의 flow prompt와 CAM++ embedding에서 온다. 감정·억양 보존 정도는 acceptance 수치로만 말한다.
+- chunk는 독립 변환되며 경계 crossfade는 아직 없다.
+- Worker는 TTS와 Speech VC가 같은 lease role(`cosyvoice3`)을 쓰게 해 runtime을 한 번만 load한다. role을 나누면 8 GB GPU에서 모드를 바꿀 때마다 eviction과 재load가 일어난다.
+
+Acceptance 기준과 결과는 [model-evaluation.md](model-evaluation.md#korean-speech-vc-acceptance-phase-12)에 있다. 기준을 통과하기 전에는 운영 기본 경로로 쓰지 않는다.
+
 ## API 예시
 
 ```bash
