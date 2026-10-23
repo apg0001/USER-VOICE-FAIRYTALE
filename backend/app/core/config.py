@@ -52,11 +52,19 @@ class Settings(BaseSettings):
     cosyvoice_fp16: bool = True
     enable_demucs: bool = False
     demucs_model_path: Path = Path("./models/demucs-htdemucs")
+    enable_seed_vc: bool = False
+    seed_vc_runtime_path: Path = Path("./models/seed-vc-runtime")
+    seed_vc_checkpoint_path: Path = Path("./models/seed-vc-svc")
     temp_retention_hours: int = 24
     input_retention_hours: int = Field(default=24, ge=1)
     output_retention_hours: int = Field(default=168, ge=1)
     cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
     orphan_grace_hours: int = Field(default=2, ge=1)
+
+    @property
+    def seed_vc_available(self) -> bool:
+        # Seed-VC converts a separated vocal; the mock separator would feed it a scaled mix.
+        return self.enable_seed_vc and self.enable_demucs
 
 
 @lru_cache

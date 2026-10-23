@@ -3,6 +3,9 @@ services:
     environment:
       USE_MOCK_INFERENCE: "false"
       ENABLE_COSYVOICE3: "true"
+      # The API only publishes descriptors; keep these in step with the worker.
+      ENABLE_DEMUCS: ${ENABLE_DEMUCS:-false}
+      ENABLE_SEED_VC: ${ENABLE_SEED_VC:-false}
 
   worker:
     build:
@@ -16,6 +19,10 @@ services:
       # Research-only weights (see docs/model-evaluation.md); opt in explicitly.
       ENABLE_DEMUCS: ${ENABLE_DEMUCS:-false}
       DEMUCS_MODEL_PATH: /data/models/demucs-htdemucs
+      # GPL-3.0 research model; also requires ENABLE_DEMUCS.
+      ENABLE_SEED_VC: ${ENABLE_SEED_VC:-false}
+      SEED_VC_RUNTIME_PATH: /opt/seed-vc
+      SEED_VC_CHECKPOINT_PATH: /data/models/seed-vc-svc
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
     volumes:
       - voice_storage:/data/storage

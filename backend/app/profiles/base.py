@@ -26,6 +26,20 @@ class MockVoiceProfileBuilder:
         }
 
 
+class SeedVCProfileBuilder:
+    model_key = "seed-vc-svc-f0-44k-v2"
+
+    async def build(
+        self, artifact: AudioArtifact, *, sample_transcript: str | None = None
+    ) -> dict[str, Any]:
+        return {
+            "builder": "seed-vc-reference-v1",
+            "reference_storage_key": artifact.cleaned_storage_key,
+            "source_sha256": artifact.sha256,
+            "sample_rate": artifact.preprocessing.target_sample_rate,
+        }
+
+
 class CosyVoice3ProfileBuilder:
     model_key = "cosyvoice3-0.5b-2512"
 

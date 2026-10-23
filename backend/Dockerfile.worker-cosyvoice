@@ -1,11 +1,14 @@
 FROM python:3.11-slim AS runtime
 
 ARG COSYVOICE_REVISION=074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc
+# Seed-VC is GPL-3.0: distributing this image carries GPL obligations (research use only).
+ARG SEED_VC_REVISION=51383efd921027683c89e5348211d93ff12ac2a8
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    COSYVOICE_RUNTIME_PATH=/opt/cosyvoice
+    COSYVOICE_RUNTIME_PATH=/opt/cosyvoice \
+    SEED_VC_RUNTIME_PATH=/opt/seed-vc
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y build-essential ffmpeg git libsndfile1 sox \
@@ -15,6 +18,10 @@ RUN git clone --filter=blob:none https://github.com/QwenAudio/CosyVoice.git /opt
     && git -C /opt/cosyvoice checkout "$COSYVOICE_REVISION" \
     && git -C /opt/cosyvoice submodule update --init --recursive --depth 1 \
     && test "$(git -C /opt/cosyvoice rev-parse HEAD)" = "$COSYVOICE_REVISION"
+
+RUN git clone --filter=blob:none https://github.com/Plachtaa/seed-vc.git /opt/seed-vc \
+    && git -C /opt/seed-vc checkout "$SEED_VC_REVISION" \
+    && test "$(git -C /opt/seed-vc rev-parse HEAD)" = "$SEED_VC_REVISION"
 
 WORKDIR /app
 COPY requirements-cosyvoice.txt ./

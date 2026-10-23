@@ -64,12 +64,14 @@ def create_app(
         app.state.model_registry = build_model_registry(
             include_mock=runtime_settings.use_mock_inference,
             include_cosyvoice3=runtime_settings.enable_cosyvoice3,
+            include_seed_vc=runtime_settings.seed_vc_available,
         )
         app.state.profile_builder_registry = (
             profile_builder_registry
             or build_profile_builder_registry(
                 include_mock=runtime_settings.use_mock_inference,
                 include_cosyvoice3=runtime_settings.enable_cosyvoice3,
+                include_seed_vc=runtime_settings.seed_vc_available,
             )
         )
         app.state.file_service = file_service or FileService(

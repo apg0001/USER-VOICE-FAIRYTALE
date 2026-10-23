@@ -130,7 +130,9 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     include_mock=settings.use_mock_inference,
                     settings=settings,
                 )
-                singing_registry = build_singing_registry(include_mock=settings.use_mock_inference)
+                singing_registry = build_singing_registry(
+                    include_mock=settings.use_mock_inference, settings=settings
+                )
                 separator_lease = lease_stack.enter_context(
                     manager.lease(
                         "separation",
