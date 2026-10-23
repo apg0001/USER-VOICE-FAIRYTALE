@@ -165,7 +165,7 @@ RAM and no other process holding the GPU:
 
 ```bash
 # Zira target reference: Windows SAPI, 24 kHz mono 16-bit, text from the fixture
-python scripts/benchmark_cosyvoice3_vc.py   --model ~/cosyvoice3-0.5b-2512 --runtime ~/cosyvoice-runtime
+python scripts/benchmark_cosyvoice3_vc.py --model ~/cosyvoice3-0.5b-2512 --runtime ~/cosyvoice-runtime
 ```
 
 The script expects `models/acceptance/synthetic-heami-ko-kr-v1.wav`,
@@ -220,8 +220,51 @@ environment as above; summary in
 
 ```bash
 python scripts/download_demucs.py --output ~/demucs-htdemucs
-python scripts/benchmark_demucs.py   --musdb-root ~/datasets/musdb18-7/wav --model ~/demucs-htdemucs
+python scripts/benchmark_demucs.py --musdb-root ~/datasets/musdb18-7/wav --model ~/demucs-htdemucs
 ```
+
+## Singing VC acceptance (Phase 14) — **not accepted**
+
+Candidate: **Seed-VC** singing model (F0-conditioned, 44.1 kHz, v2), runtime
+`Plachtaa/seed-vc@51383ef`, DiT checkpoint `Plachta/Seed-VC@257283f`, with
+RMVPE (MIT), CAM++ (Apache-2.0), BigVGAN v2 44 kHz (MIT) and whisper-small
+(Apache-2.0) pinned by revision and SHA-256. Code and DiT weights are
+**GPL-3.0** and upstream was archived on 2025-11-21; the project owner chose
+research use. The adapter keeps the source F0 (`auto_f0_adjust` off) and uses
+30 diffusion steps.
+
+Sources are MUSDB18 test `vocals.wav` stems with at least 30 % voiced frames
+(47 tracks), converted to the two synthetic targets (94 cases). Verifiers are
+deliberately independent of the model's own encoders: Resemblyzer GE2E for
+speaker similarity and WORLD harvest for pitch. RPA50 is the share of
+source-voiced frames whose output F0 is within 50 cents. Thresholds were fixed
+and committed (`e1806b4`) before the run.
+
+| Metric | Result | Gate |
+|---|---:|---:|
+| Mean target cosine gain over source | 0.284 | >= 0.10 pass |
+| Mean RPA50 (melody kept within 50 cents) | **0.638** | >= 0.75 **fail** |
+| Median RTF (7 s vocal) | 0.787 | <= 2.0 pass |
+| Full pipeline RTF (Demucs + Seed-VC, 35 s, 4 chunks) | 0.852 | <= 3.0 pass |
+| Pipeline frame count preserved | yes | pass |
+| Cold load | 11.2 s | <= 180 pass |
+| Peak VRAM, both models resident | 3,083 MiB | <= 7,600 pass |
+| Max clipped-sample ratio | 0.00005 | <= 0.001 pass |
+
+Only 21 of 94 cases reach RPA50 0.75 (median 0.666). A breakdown of eight
+tracks shows the output follows the model's **own** F0 input faithfully: per
+track, output RPA50 nearly equals the agreement between RMVPE and harvest on
+the *unconverted* source (0.195 vs 0.248, 0.283 vs 0.326, 0.344 vs 0.340,
+0.700 vs 0.704, 0.902 vs 0.907). A pitch-neutral resampling round trip of the
+source scores 0.92–1.00, so the verifier itself is stable. The failures come
+from RMVPE reading a different melody than harvest on stems with backing
+vocals, harmonies or effects (one track: 34 % octave errors). A listener would
+hear that as wrong notes, so this is a real quality limit of the model's
+pitch front end, not a measurement artifact. The gate was not relaxed.
+
+Status: the adapter and benchmark live on branch `feat/#15-real-singing-vc`
+and are **not merged**; singing VC stays on the Mock in `develop`. Summary:
+`docs/evidence/seed-vc-singing-rtx3050-2026-10-23.json`.
 
 ## Provenance and release duties
 
