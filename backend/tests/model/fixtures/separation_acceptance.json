@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "dataset": {
+    "id": "MUSDB18-7-WAV",
+    "source": "https://zenodo.org/records/3270814",
+    "license": "CC BY 4.0",
+    "sha256": "computed at download; recorded in the evidence file",
+    "split": "test",
+    "note": "MUSDB18 test tracks are not part of the htdemucs training set."
+  },
+  "silent_vocal_rms_dbfs": -50.0,
+  "boundary_tracks": 5,
+  "chunk_seconds": 10,
+  "thresholds": {
+    "vocal_sdr_median_min_db": 7.0,
+    "instrumental_sdr_median_min_db": 12.0,
+    "chunk_boundary_vocal_sdr_drop_max_db": 0.5,
+    "rtf_median_max": 0.5,
+    "load_seconds_max": 60.0,
+    "peak_vram_mb_max": 3000,
+    "clipped_sample_ratio_max": 0.001
+  }
+}

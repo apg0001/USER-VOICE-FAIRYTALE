@@ -6,7 +6,8 @@
 
 - 저장소: <https://github.com/apg0001/USER-VOICE-FAIRYTALE>
 - 기준 브랜치: `develop`
-- 완료 구현 범위: Phase 1–12
+- 완료 구현 범위: Phase 1–13
+- Phase 13: [#14 Demucs 실제 보컬 분리](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/14), opt-in `ENABLE_DEMUCS`. MUSDB18 test 50곡 median vocal SDR 8.69 dB, chunk 경계 손실 0.22 dB, RTF 0.07, VRAM 875 MiB. **weight 라이선스 불명확 → 연구용 전제** (2026-10-23 프로젝트 소유자 결정: 개인·연구용 진행)
 - Phase 12: [#13 CosyVoice3 실제 Speech VC](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/13), branch `feat/#13-real-speech-vc`. 같은 CosyVoice3 adapter가 TTS와 Speech VC를 함께 제공하고 Worker는 runtime 하나를 공유한다.
 - Phase 12 GPU acceptance (2026-10-23, RTX 3050 8GB): load 135.0s(host 메모리 압박 중), device peak delta 5,418 MiB, median RTF 1.056(warm 방향 0.608), mean CER 0.162, target cosine 0.878, cosine gain 0.384, clipping 0; 모든 사전 기준 통과. 증빙 `docs/evidence/cosyvoice3-speech-vc-rtx3050-2026-10-23.json`
 - Phase 11 이슈: [#11 실제 한국어 TTS 모델 품질·라이선스 평가와 Adapter 연결](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/11)
@@ -63,7 +64,7 @@ FastAPI는 인증 경계, schema, owner 검증, Job/파일 metadata만 처리한
 
 아직 구현되지 않은 동작:
 
-- 실제 Singing VC와 보컬 분리 model adapter
+- 실제 Singing VC model adapter (Seed-VC 후보: 코드 GPL-3.0, 저장소 archived, checkpoint 라이선스 미기재)
 - Speech VC chunk 경계 crossfade
 - 실제 IdP 또는 인증 gateway 배포 구성
 - S3/MinIO storage adapter, at-rest encryption, multipart/checksum
@@ -311,6 +312,7 @@ closeout이 끝났다면 `gh issue list --state open`이 다음 작업의 유일
 - 기존 output의 null expiry는 cleanup 시 created_at 기반으로 처리한다.
 - 실제 인증 gateway는 repository에 포함되지 않는다. trusted proxy 설정만으로 public auth가 완성되는 것은 아니다.
 - API image와 CI 기본은 Python 3.12, CosyVoice Worker image는 3.11이다. 3.12 전용 문법(예: `array[int]` 런타임 subscript)은 Worker 시작 시 import를 깨뜨린다. backend CI는 두 버전 matrix로 돈다.
+- 연구용 전제 모델(Demucs 등)은 opt-in 플래그, descriptor `usage` metadata, 문서의 라이선스 상태를 함께 유지한다. 상업 배포 언급이 나오면 다시 검토한다.
 - CosyVoice3 descriptor 하나가 TTS와 Speech VC capability를 함께 가진다. Worker lease role은 `_lease_role`에서 `cosyvoice3`로 합쳐져 runtime을 공유한다.
 
 ## 14. 문서 읽기 순서

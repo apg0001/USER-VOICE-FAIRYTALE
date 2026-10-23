@@ -1,6 +1,6 @@
 # Singing Voice Conversion Pipeline
 
-Phase 7은 음악 입력을 보컬과 반주로 분리하고, 보컬에 등록된 Voice Profile의 음색을 적용한 뒤 기존 반주와 재합성하는 Worker 계약을 구현한다. 현재 구현은 오디오 흐름과 수명주기를 검증하는 CPU Mock이며 실제 가창 음색 품질을 제공하지 않는다.
+Phase 7은 음악 입력을 보컬과 반주로 분리하고, 보컬에 등록된 Voice Profile의 음색을 적용한 뒤 기존 반주와 재합성하는 Worker 계약을 구현한다. Phase 13부터 분리 단계는 실제 Demucs htdemucs adapter를 opt-in으로 쓸 수 있다. Singing VC 모델은 아직 Mock이므로 전체 결과는 실제 가창 음색 변환이 아니다.
 
 ## 입력 계약
 
@@ -29,6 +29,16 @@ normalized WAV
 `SeparationModel`과 `SingingVoiceModel`은 각각 독립된 Protocol과 registry를 사용한다. Worker가 두 모델을 load하고 역순으로 unload하므로 향후 분리 모델과 SVC 모델을 서로 독립적으로 교체할 수 있다.
 
 각 chunk는 입력 byte 수를 보존해야 한다. Pipeline은 최종 frame 수, sample rate, channel 수와 duration을 검증하며 어댑터가 길이를 바꾸면 Job을 실패시킨다. checkpoint는 chunk 처리가 끝날 때마다 DB에 영속화된다.
+
+## 실제 분리: Demucs htdemucs (Phase 13, 연구용)
+
+`HTDemucsSeparationModel`은 `ENABLE_DEMUCS=true`일 때만 Worker separator가 된다. 분리는 사용자가 고르는 모델이 아니라 고정 pipeline 단계이므로 `separator_key(settings)`가 선택한다.
+
+- weight는 `955717e8-8726e21a.th` SHA-256이 pin과 다르면 load를 거부한다. 네트워크 없이 local repo(`DEMUCS_MODEL_PATH`)에서만 load한다.
+- 입력은 44.1 kHz여야 한다(singing 전처리 preset과 같음). mono는 2채널로 복제해 분리한 뒤 평균으로 되돌린다.
+- vocal = `vocals` stem, instrumental = 나머지 stem 합이다. 공식 API처럼 평균·표준편차 정규화를 적용하고 재현성을 위해 `shifts=0`을 쓴다.
+- MUSDB18 test 50곡에서 median vocal SDR 8.69 dB, 10초 chunk 경계 손실 0.22 dB, RTF 0.07, VRAM 875 MiB였다. 자세한 수치와 라이선스 상태는 [model-evaluation.md](model-evaluation.md#vocal-separation-acceptance-phase-13)에 있다.
+- **weight 라이선스가 불명확해 연구/비상업 전제로만 쓴다.** 상업 배포 전에 재검토해야 한다.
 
 ## Mixing 정책
 
