@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     cosyvoice_runtime_path: Path = Path("./models/cosyvoice-runtime")
     cosyvoice_checkpoint_path: Path = Path("./models/cosyvoice3-0.5b-2512")
     cosyvoice_fp16: bool = True
+    enable_demucs: bool = False
+    demucs_model_path: Path = Path("./models/demucs-htdemucs")
     temp_retention_hours: int = 24
     input_retention_hours: int = Field(default=24, ge=1)
     output_retention_hours: int = Field(default=168, ge=1)

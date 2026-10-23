@@ -19,6 +19,7 @@ from app.models.manager import (
     VRAMAdmissionError,
 )
 from app.models.separation import SeparationModel, build_separation_registry
+from app.models.separation.registry import separator_key
 from app.models.singing import SingingVoiceModel, build_singing_registry
 from app.models.tts import TTSModel, build_tts_model_registry
 from app.models.tts.cosyvoice import COSYVOICE3_DESCRIPTOR
@@ -126,13 +127,14 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 load_time += conversion_lease.load_seconds
             elif is_singing_vc:
                 separation_registry = build_separation_registry(
-                    include_mock=settings.use_mock_inference
+                    include_mock=settings.use_mock_inference,
+                    settings=settings,
                 )
                 singing_registry = build_singing_registry(include_mock=settings.use_mock_inference)
                 separator_lease = lease_stack.enter_context(
                     manager.lease(
                         "separation",
-                        lambda: separation_registry.create("mock-separator-v1"),
+                        lambda: separation_registry.create(separator_key(settings)),
                     )
                 )
                 singing_lease = lease_stack.enter_context(
