@@ -20,6 +20,8 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     worker_max_tasks_per_child=20,
+    # Structured JSON logs go to stdout and carry their own level.
+    worker_redirect_stdouts_level="INFO",
     timezone="UTC",
     beat_schedule={
         "cleanup-expired-artifacts": {

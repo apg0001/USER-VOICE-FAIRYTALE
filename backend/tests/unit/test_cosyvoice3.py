@@ -1,4 +1,5 @@
 import json
+import logging
 import subprocess
 import sys
 import wave
@@ -288,3 +289,24 @@ def test_cosyvoice_speech_vc_rejects_mismatched_rate_and_missing_reference(
     with pytest.raises(CosyVoiceRuntimeError, match="invalid or missing"):
         model.convert(b"\0\0", 24_000, {"reference_storage_key": "../outside.wav"})
     assert runtime.calls == []
+
+
+def test_cosyvoice_load_drops_upstream_root_records_with_user_text(tmp_path: Path) -> None:
+    settings, _ = prepare_model_files(tmp_path)
+    root = logging.getLogger()
+    before = list(root.filters)
+    runtime_file = settings.cosyvoice_runtime_path.resolve() / "cosyvoice" / "cli" / "cosyvoice.py"
+
+    def record(pathname: str) -> logging.LogRecord:
+        return logging.LogRecord(
+            "root", logging.INFO, pathname, 84, "synthesis text 비밀", None, None
+        )
+
+    try:
+        for _ in range(2):
+            CosyVoice3Model(settings, runtime_factory=lambda *_args: FakeRuntime()).load()
+        assert len(root.filters) == len(before) + 1
+        assert not root.filter(record(str(runtime_file)))
+        assert root.filter(record(str(tmp_path / "app" / "worker.py")))
+    finally:
+        root.filters[:] = before

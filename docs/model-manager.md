@@ -39,6 +39,8 @@ GPU model descriptor는 `metadata.estimated_vram_mb`를 제공해야 한다. loa
 3. 부족하면 idle LRU model을 unload하고 CUDA cache를 비운 뒤 다시 측정한다.
 4. 여전히 부족하면 model을 load하지 않고 `VRAM_ADMISSION_FAILED`로 현재 Job만 실패시킨다.
 
+**8 GB 데스크톱 GPU**: 화면 출력과 앱이 VRAM 약 1 GB를 쓰면 free가 약 7,200 MiB가 되어 CosyVoice3(6,708 MiB) + 기본 예비 512 MiB = 7,220 MiB를 넘지 못하고 모든 Job이 `VRAM_ADMISSION_FAILED`가 된다(2026-10-23 e2e). 실측 peak는 idle 약 1 GB 포함 약 7.8 GB라 들어가므로, 이런 host에서는 `GPU_VRAM_RESERVE_MB=256`으로 실행한다. 전용 서버 GPU에서는 기본 512 MiB를 유지한다.
+
 GPU를 요구하는데 PyTorch/CUDA/device가 없으면 `GPU_UNAVAILABLE`, 모든 cache entry가 lease 중이면 `MODEL_CAPACITY_EXCEEDED`를 기록한다. 추정치는 admission 방어선이지 실제 peak VRAM 보장이 아니므로 실제 runner 측정으로 갱신해야 한다.
 
 ## CUDA OOM 복구
@@ -98,4 +100,17 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm \
 
 그 다음 model별로 cold load, warm cache hit, LRU 교체, 의도적으로 낮춘 admission 한도, 격리된 OOM fixture, OOM 직후 정상 Job을 실행한다. 각 실행에서 GPU/driver/image digest, model/weights version, load time, peak allocated/reserved VRAM, RTF, Job 상태와 Worker 생존 여부를 기록한다.
 
-현재 repository의 기본 Worker image에는 PyTorch와 실제 model adapter가 없으므로 위 진단은 GPU acceptance 환경을 준비한 뒤 실행한다. 실행하지 않은 실제 GPU 검증을 완료로 표기하지 않는다.
+기본 Worker image에는 PyTorch와 실제 model adapter가 없고, GPU 검증은 `Dockerfile.worker-cosyvoice` image로 한다. 실행하지 않은 실제 GPU 검증을 완료로 표기하지 않는다.
+
+### 2026-10-23 e2e 결과 (Windows 11 + Docker Desktop WSL2, RTX 3050 8 GB)
+
+GPU stack을 처음으로 끝까지 띄워 API로 음성 등록 → `general_tts` → `speech_voice_conversion`을 실행했다.
+
+| 항목 | 결과 |
+|---|---|
+| Worker image | 빌드 성공(12.1 GB), 시작 시 CUDA 12.1과 RTX 3050 인식 |
+| 음성 등록 | 10초 미만 sample은 422(최소 길이 정책 정상), 26초 sample READY |
+| TTS | COMPLETED, 8.12초 음성, cold load 144.9 s, 처리 358 s |
+| Speech VC | COMPLETED, 6.75초 음성, **cache hit**(TTS와 같은 `cosyvoice3` lease), 처리 16.3 s |
+
+cold load와 TTS 처리 시간은 host 여유 RAM이 약 1–2 GB라 Docker VM이 페이징한 상태에서 측정됐다(정상 load 36 s). Docker Desktop 포트 프록시가 그 사이 polling 연결을 간헐적으로 끊었다. e2e에서 발견해 고친 문제는 upstream root logger의 원문 텍스트 노출, Celery의 로그 레벨 오표기, 위 8 GB VRAM 예비분이다(#16). 수정 후 고유 표식 문구로 TTS를 다시 돌려 Worker 로그에 표식·`synthesis text`가 0건임을 확인했다. 그 재실행은 새 컨테이너의 cold load와 페이징이 겹쳐 835 s가 걸렸다. 실사용 전에는 host 여유 RAM을 6 GB 이상 확보한다.
