@@ -262,9 +262,16 @@ vocals, harmonies or effects (one track: 34 % octave errors). A listener would
 hear that as wrong notes, so this is a real quality limit of the model's
 pitch front end, not a measurement artifact. The gate was not relaxed.
 
-Status: the adapter and benchmark live on branch `feat/#15-real-singing-vc`
-and are **not merged**; singing VC stays on the Mock in `develop`. Summary:
-`docs/evidence/seed-vc-singing-rtx3050-2026-10-23.json`.
+Decision (2026-10-23): **on hold.** The project owner chose to keep the
+singing VC on the Mock rather than merge with a known melody defect or tune
+against this test set. The adapter, download script and benchmark are kept,
+unmerged, on branch `feat/#15-real-singing-vc` (issue #15, closed as not
+planned). Summary: `docs/evidence/seed-vc-singing-rtx3050-2026-10-23.json`.
+
+To resume, change the F0 front end first (for example a consensus of RMVPE and
+an independent tracker, or a lead-melody extractor), fix new thresholds in a
+commit before measuring, and evaluate on a dataset other than MUSDB18-7 test so
+the result is not tuned to this run.
 
 ## Provenance and release duties
 

@@ -6,7 +6,7 @@
 
 - 저장소: <https://github.com/apg0001/USER-VOICE-FAIRYTALE>
 - 기준 브랜치: `develop`
-- 완료 구현 범위: Phase 1–13
+- 완료 구현 범위: Phase 1–13 (Phase 14 Singing VC는 보류, 아래 미구현 목록 참고)
 - Phase 13: [#14 Demucs 실제 보컬 분리](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/14), opt-in `ENABLE_DEMUCS`. MUSDB18 test 50곡 median vocal SDR 8.69 dB, chunk 경계 손실 0.22 dB, RTF 0.07, VRAM 875 MiB. **weight 라이선스 불명확 → 연구용 전제** (2026-10-23 프로젝트 소유자 결정: 개인·연구용 진행)
 - Phase 12: [#13 CosyVoice3 실제 Speech VC](https://github.com/apg0001/USER-VOICE-FAIRYTALE/issues/13), branch `feat/#13-real-speech-vc`. 같은 CosyVoice3 adapter가 TTS와 Speech VC를 함께 제공하고 Worker는 runtime 하나를 공유한다.
 - Phase 12 GPU acceptance (2026-10-23, RTX 3050 8GB): load 135.0s(host 메모리 압박 중), device peak delta 5,418 MiB, median RTF 1.056(warm 방향 0.608), mean CER 0.162, target cosine 0.878, cosine gain 0.384, clipping 0; 모든 사전 기준 통과. 증빙 `docs/evidence/cosyvoice3-speech-vc-rtx3050-2026-10-23.json`
@@ -64,7 +64,7 @@ FastAPI는 인증 경계, schema, owner 검증, Job/파일 metadata만 처리한
 
 아직 구현되지 않은 동작:
 
-- 실제 Singing VC model adapter (Seed-VC 후보: 코드 GPL-3.0, 저장소 archived, checkpoint 라이선스 미기재)
+- 실제 Singing VC model adapter — **보류(2026-10-23)**. Seed-VC 후보(#15, GPL-3.0)가 멜로디 보존 RPA50 0.638 < 0.75로 acceptance 미통과. 코드는 미병합 브랜치 `feat/#15-real-singing-vc`에 보존. 원인과 재개 조건은 [model-evaluation.md](model-evaluation.md#singing-vc-acceptance-phase-14--not-accepted)
 - Speech VC chunk 경계 crossfade
 - 실제 IdP 또는 인증 gateway 배포 구성
 - S3/MinIO storage adapter, at-rest encryption, multipart/checksum

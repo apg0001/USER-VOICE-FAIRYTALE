@@ -1,6 +1,6 @@
 # Singing Voice Conversion Pipeline
 
-Phase 7은 음악 입력을 보컬과 반주로 분리하고, 보컬에 등록된 Voice Profile의 음색을 적용한 뒤 기존 반주와 재합성하는 Worker 계약을 구현한다. Phase 13부터 분리 단계는 실제 Demucs htdemucs adapter를 opt-in으로 쓸 수 있다. Singing VC 모델은 아직 Mock이므로 전체 결과는 실제 가창 음색 변환이 아니다.
+Phase 7은 음악 입력을 보컬과 반주로 분리하고, 보컬에 등록된 Voice Profile의 음색을 적용한 뒤 기존 반주와 재합성하는 Worker 계약을 구현한다. Phase 13부터 분리 단계는 실제 Demucs htdemucs adapter를 opt-in으로 쓸 수 있다. Singing VC 모델은 아직 Mock이므로 전체 결과는 실제 가창 음색 변환이 아니다. 실제 SVC 후보 Seed-VC는 Phase 14 acceptance에서 멜로디 보존 기준을 통과하지 못해 보류됐다([model-evaluation.md](model-evaluation.md#singing-vc-acceptance-phase-14--not-accepted)).
 
 ## 입력 계약
 

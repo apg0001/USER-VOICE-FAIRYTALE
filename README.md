@@ -305,6 +305,7 @@ curl -X POST http://localhost:8000/api/jobs \
 - [x] Phase 11: licensed real Korean TTS adapter and GPU acceptance
 - [x] Phase 12: CosyVoice3 real speech VC adapter and GPU acceptance (#13)
 - [x] Phase 13: Demucs htdemucs vocal separation, research-use opt-in (#14)
+- [ ] Phase 14: real singing VC — on hold; Seed-VC failed the melody gate (#15)
 
 ## Development Workflow
 
