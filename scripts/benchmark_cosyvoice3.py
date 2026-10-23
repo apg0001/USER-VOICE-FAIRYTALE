@@ -24,7 +24,7 @@ from app.models.tts.cosyvoice import (  # noqa: E402
     COSYVOICE_MODEL_ID,
     COSYVOICE_MODEL_REVISION,
     COSYVOICE_RUNTIME_REVISION,
-    CosyVoice3TTSModel,
+    CosyVoice3Model,
 )
 
 
@@ -157,7 +157,7 @@ def main() -> None:
         "reference_storage_key": reference.name,
         "prompt_text": corpus["reference"]["transcript"],
     }
-    model = CosyVoice3TTSModel(settings)
+    model = CosyVoice3Model(settings)
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
     vram_sampler = VRAMSampler()

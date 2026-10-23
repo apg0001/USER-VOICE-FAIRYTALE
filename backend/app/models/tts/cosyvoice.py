@@ -1,7 +1,10 @@
 import gc
 import importlib
 import json
+import os
 import sys
+import tempfile
+import wave
 from array import array
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -20,7 +23,11 @@ COSYVOICE3_DESCRIPTOR = ModelDescriptor(
     key="cosyvoice3-0.5b-2512",
     display_name="Fun-CosyVoice3 0.5B (2512)",
     version=COSYVOICE_MODEL_REVISION[:12],
-    capabilities=(ModelCapability.GENERAL_TTS, ModelCapability.LONG_FORM_TTS),
+    capabilities=(
+        ModelCapability.GENERAL_TTS,
+        ModelCapability.LONG_FORM_TTS,
+        ModelCapability.SPEECH_VOICE_CONVERSION,
+    ),
     requires_gpu=True,
     metadata={
         "runtime": "QwenAudio/CosyVoice",
@@ -72,6 +79,14 @@ class CosyVoiceRuntime(Protocol):
         stream: bool,
     ) -> Iterable[dict[str, Any]]: ...
 
+    def inference_vc(
+        self,
+        source_wav: str,
+        prompt_wav: str,
+        *,
+        stream: bool,
+    ) -> Iterable[dict[str, Any]]: ...
+
 
 RuntimeFactory = Callable[[Path, Path, bool], CosyVoiceRuntime]
 
@@ -101,7 +116,9 @@ def _load_runtime(runtime_path: Path, model_path: Path, fp16: bool) -> CosyVoice
     )
 
 
-class CosyVoice3TTSModel:
+class CosyVoice3Model:
+    """One pinned runtime serving zero-shot TTS and reference-based speech VC."""
+
     descriptor = COSYVOICE3_DESCRIPTOR
 
     def __init__(
@@ -160,6 +177,35 @@ class CosyVoice3TTSModel:
             pcm_s16le=self._to_pcm(outputs),
             sample_rate=self.runtime.sample_rate,
         )
+
+    def convert(self, pcm_s16le: bytes, sample_rate: int, voice_profile: dict[str, Any]) -> bytes:
+        if self.runtime is None:
+            raise RuntimeError("model must be loaded before inference")
+        if sample_rate != self.runtime.sample_rate:
+            raise CosyVoiceRuntimeError(
+                f"voice conversion input must be {self.runtime.sample_rate} Hz"
+            )
+        reference_key = voice_profile.get("reference_storage_key")
+        if not isinstance(reference_key, str) or not reference_key:
+            raise CosyVoiceRuntimeError("voice profile has no CosyVoice reference")
+        reference_path = self._reference_path(reference_key)
+        descriptor, source_name = tempfile.mkstemp(prefix="cosyvoice-vc-", suffix=".wav")
+        os.close(descriptor)
+        source_path = Path(source_name)
+        try:
+            with wave.open(str(source_path), "wb") as source:
+                source.setnchannels(1)
+                source.setsampwidth(2)
+                source.setframerate(sample_rate)
+                source.writeframes(pcm_s16le)
+            converted = self._to_pcm(
+                self.runtime.inference_vc(str(source_path), str(reference_path), stream=False)
+            )
+        finally:
+            source_path.unlink(missing_ok=True)
+        # Speech tokens run at 25 Hz, so output length drifts by up to one token;
+        # the pipeline contract requires the source frame count.
+        return converted[: len(pcm_s16le)].ljust(len(pcm_s16le), b"\0")
 
     def unload(self) -> None:
         self.runtime = None

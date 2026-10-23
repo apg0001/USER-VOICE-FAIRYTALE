@@ -21,6 +21,7 @@ from app.models.manager import (
 from app.models.separation import SeparationModel, build_separation_registry
 from app.models.singing import SingingVoiceModel, build_singing_registry
 from app.models.tts import TTSModel, build_tts_model_registry
+from app.models.tts.cosyvoice import COSYVOICE3_DESCRIPTOR
 from app.models.voice_conversion import (
     VoiceConversionModel,
     build_voice_conversion_registry,
@@ -48,6 +49,11 @@ def _failure_code(error: Exception) -> str:
     if isinstance(error, ModelCapacityError):
         return "MODEL_CAPACITY_EXCEEDED"
     return "INFERENCE_FAILED"
+
+
+def _lease_role(default_role: str, model_key: str) -> str:
+    # TTS and speech VC share one CosyVoice3 runtime; distinct roles would load it twice.
+    return "cosyvoice3" if model_key == COSYVOICE3_DESCRIPTOR.key else default_role
 
 
 async def execute_job(job_id: str) -> dict[str, str]:
@@ -94,7 +100,10 @@ async def execute_job(job_id: str) -> dict[str, str]:
                     settings=settings,
                 )
                 tts_lease = lease_stack.enter_context(
-                    manager.lease("tts", lambda: tts_registry.create(job.model_key))
+                    manager.lease(
+                        _lease_role("tts", job.model_key),
+                        lambda: tts_registry.create(job.model_key),
+                    )
                 )
                 model = tts_lease.model
                 active_cache_keys.add(tts_lease.cache_key)
@@ -102,10 +111,14 @@ async def execute_job(job_id: str) -> dict[str, str]:
                 load_time += tts_lease.load_seconds
             elif is_speech_vc:
                 conversion_registry = build_voice_conversion_registry(
-                    include_mock=settings.use_mock_inference
+                    include_mock=settings.use_mock_inference,
+                    settings=settings,
                 )
                 conversion_lease = lease_stack.enter_context(
-                    manager.lease("speech-vc", lambda: conversion_registry.create(job.model_key))
+                    manager.lease(
+                        _lease_role("speech-vc", job.model_key),
+                        lambda: conversion_registry.create(job.model_key),
+                    )
                 )
                 model = conversion_lease.model
                 active_cache_keys.add(conversion_lease.cache_key)

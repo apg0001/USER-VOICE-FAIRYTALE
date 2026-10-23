@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from app.core.config import Settings
 from app.models.tts.base import TTSModel
-from app.models.tts.cosyvoice import COSYVOICE3_DESCRIPTOR, CosyVoice3TTSModel
+from app.models.tts.cosyvoice import COSYVOICE3_DESCRIPTOR, CosyVoice3Model
 from app.models.tts.mock import MockTTSModel
 
 
@@ -43,6 +43,6 @@ def build_tts_model_registry(
     if settings is not None and settings.enable_cosyvoice3:
         registry.register_factory(
             COSYVOICE3_DESCRIPTOR.key,
-            lambda: CosyVoice3TTSModel(settings),
+            lambda: CosyVoice3Model(settings),
         )
     return registry

@@ -16,6 +16,7 @@ from app.db.models import InputArtifact, JobMode, JobOutput, JobStatus, VoicePro
 from app.models.base import ModelCapability, ModelDescriptor
 from app.models.manager import ModelManager
 from app.models.tts import TTSAudio
+from app.models.tts.cosyvoice import COSYVOICE3_DESCRIPTOR
 from app.services.job_service import CreateJobCommand, JobService
 from app.services.user_service import resolve_user
 from app.storage import LocalObjectStorage
@@ -332,5 +333,136 @@ async def test_worker_recovers_from_inference_oom_and_runs_next_job(
         assert healthy_result["status"] == JobStatus.COMPLETED.value
         assert healthy.status == JobStatus.COMPLETED
         assert runtime.empty_cache_calls >= 1
+    manager.shutdown()
+    await engine.dispose()
+
+
+class SharedCosyVoiceModel:
+    descriptor = COSYVOICE3_DESCRIPTOR
+    loads = 0
+
+    def load(self) -> None:
+        type(self).loads += 1
+
+    def synthesize(self, text: str, voice_profile: dict[str, Any]) -> TTSAudio:
+        return TTSAudio(b"\x00\x00" * 2_400, 24_000)
+
+    def convert(self, pcm_s16le: bytes, sample_rate: int, voice_profile: dict[str, Any]) -> bytes:
+        return pcm_s16le
+
+    def unload(self) -> None:
+        pass
+
+
+class SharedCosyVoiceRegistry:
+    def create(self, key: str) -> SharedCosyVoiceModel:
+        assert key == COSYVOICE3_DESCRIPTOR.key
+        return SharedCosyVoiceModel()
+
+
+@pytest.mark.asyncio
+async def test_worker_shares_one_cosyvoice_runtime_between_tts_and_speech_vc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'shared-worker.db'}"
+    storage_path = tmp_path / "storage"
+    engine = create_async_engine(database_url)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    model_key = COSYVOICE3_DESCRIPTOR.key
+    async with factory() as session:
+        user = await resolve_user(session, "shared-worker-user", create=True)
+        assert user is not None
+        profile = VoiceProfile(
+            user_id=user.id,
+            name="shared voice",
+            status="READY",
+            consent_version="2026-09-01",
+            consented_at=datetime.now(UTC),
+            profile_metadata={
+                "model_profiles": {model_key: {"reference_storage_key": "profiles/ref.wav"}}
+            },
+        )
+        session.add(profile)
+        await session.commit()
+        await session.refresh(profile)
+
+        source = tmp_path / "speech.wav"
+        with wave.open(str(source), "wb") as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.setframerate(24_000)
+            stream.writeframes(b"\x01\x00" * 24_000)
+        input_key = await LocalObjectStorage(storage_path).put(
+            source,
+            namespace=f"users/{user.id}/inputs/cleaned",
+            suffix="wav",
+        )
+        session.add(
+            InputArtifact(
+                user_id=user.id,
+                kind="speech",
+                original_storage_key=input_key,
+                cleaned_storage_key=input_key,
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        await session.commit()
+        service = JobService(session, RecordingQueue())
+        tts_job, _ = await service.create_job(
+            "shared-worker-user",
+            CreateJobCommand(
+                mode=JobMode.GENERAL_TTS,
+                model_key=model_key,
+                voice_profile_id=profile.id,
+                input_text="공유 런타임",
+            ),
+            idempotency_key="shared-worker-tts",
+        )
+        vc_job, _ = await service.create_job(
+            "shared-worker-user",
+            CreateJobCommand(
+                mode=JobMode.SPEECH_VOICE_CONVERSION,
+                model_key=model_key,
+                voice_profile_id=profile.id,
+                input_storage_key=input_key,
+                request_config={"input_duration": 1.0},
+            ),
+            idempotency_key="shared-worker-vc",
+        )
+
+    manager = ModelManager(
+        device="cuda:0",
+        max_cached_models=2,
+        vram_reserve_mb=512,
+        gpu_runtime=WorkerFakeRuntime(),
+    )
+    SharedCosyVoiceModel.loads = 0
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("STORAGE_PATH", str(storage_path))
+    monkeypatch.setenv("USE_MOCK_INFERENCE", "false")
+    monkeypatch.setattr(
+        "app.workers.inference_worker.get_worker_model_manager",
+        lambda settings: manager,
+    )
+    for name in ("build_tts_model_registry", "build_voice_conversion_registry"):
+        monkeypatch.setattr(
+            f"app.workers.inference_worker.{name}",
+            lambda **_kwargs: SharedCosyVoiceRegistry(),
+        )
+    get_settings.cache_clear()
+
+    tts_result = await execute_job(tts_job.id)
+    vc_result = await execute_job(vc_job.id)
+    get_settings.cache_clear()
+
+    async with factory() as session:
+        vc = await JobService(session, RecordingQueue()).get_job(vc_job.id)
+        assert tts_result["status"] == JobStatus.COMPLETED.value
+        assert vc_result["status"] == JobStatus.COMPLETED.value
+        assert vc.metrics["model_cache"][0]["cache_hit"] is True
+        assert SharedCosyVoiceModel.loads == 1
+        assert len(manager.cached_keys()) == 1
     manager.shutdown()
     await engine.dispose()
