@@ -69,7 +69,7 @@ Profile 단독 삭제도 먼저 `DELETION_PENDING`을 commit한다. API 도중 s
 
 Redaction processor는 key 이름에 authorization, cookie, password, secret, token, input_text, audio, storage_key, external_id가 포함되면 값을 제거하며 bytes도 제거한다. 새 로그 field를 추가할 때 원문 사용자 식별자, 텍스트, 음성 bytes, storage key, 로컬 절대경로가 없는지 테스트한다. 오류 상세는 예외 type이나 안정된 error code만 기록한다.
 
-upstream 모델 runtime은 우리 redaction을 거치지 않는다. CosyVoice는 root logger로 합성 텍스트와 등록 음성 원문을 남기므로, adapter가 load 시 runtime checkout 경로에서 나온 root logger 레코드를 버리는 filter를 설치한다. 새 runtime을 추가할 때도 실제 Job을 한 번 돌린 뒤 Worker 로그에서 입력 원문을 grep해 확인한다. Celery는 stdout으로 나가는 JSON 로그를 `INFO`로 리다이렉트하며, 각 줄의 실제 level은 JSON 안의 값이 기준이다.
+upstream 모델 runtime은 우리 redaction을 거치지 않는다. CosyVoice는 root logger로 합성 텍스트와 등록 음성 원문을 남기므로, adapter가 load 시 runtime checkout 경로에서 나온 root logger 레코드를 버리는 filter를 설치한다. 새 runtime을 추가할 때도 실제 Job을 한 번 돌린 뒤 Worker 로그에서 입력 원문을 grep해 확인한다. Worker와 scheduler는 `app.main`을 import하지 않으므로 `app.workers.celery_app`이 import 시 같은 JSON·redaction 설정을 적용한다. 이 설정이 없으면 structlog 기본 dev renderer가 redaction 없이 실패 traceback의 지역 변수(입력 원문, storage key, 경로)를 출력한다(#17에서 실제로 발생, 회귀 테스트 `tests/unit/test_worker_logging.py`). Celery는 stdout으로 나가는 JSON 로그를 `INFO`로 리다이렉트하며, 각 줄의 실제 level은 JSON 안의 값이 기준이다.
 
 ## 6. Metrics와 dashboard
 

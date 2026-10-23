@@ -18,6 +18,8 @@ Voice Profile은 사용자가 사용 권한을 확인한 음성 샘플과 모델
 
 `POST /api/voices`는 `multipart/form-data` 요청을 받는다. `consent_accepted`, `owns_voice_or_has_permission`가 모두 참이어야 하고, 클라이언트가 제출한 `consent_version`은 `GET /api/voices/consent`가 반환하는 현재 버전과 같아야 한다. 조건을 만족하지 않으면 임시 업로드를 제외한 음성 처리를 시작하지 않는다.
 
+**권장 샘플 길이는 10–25초**다. CosyVoice3의 speech tokenizer는 30초를 넘는 prompt를 받지 않는다. adapter는 25초를 넘는 reference를 앞 25초만 임시로 잘라 쓰고, 이때 등록 원문(`sample_transcript`)은 잘린 음성과 맞지 않아 버리고 transcript 없는 cross-lingual 모드로 합성한다. 그래서 긴 샘플은 실패하지는 않지만 원문을 함께 등록한 짧은 샘플보다 음색 재현이 약할 수 있다.
+
 프로필은 처리 중 `PROCESSING`, 성공 시 `READY`, 품질 또는 처리 실패 시 `REJECTED`가 된다. Job은 요청 사용자 소유이면서 `READY`인 프로필만 참조할 수 있다.
 
 ## 저장 데이터

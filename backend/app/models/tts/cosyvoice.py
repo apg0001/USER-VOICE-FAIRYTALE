@@ -7,7 +7,8 @@ import sys
 import tempfile
 import wave
 from array import array
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -19,6 +20,8 @@ COSYVOICE_RUNTIME_REVISION = "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc"
 COSYVOICE_MODEL_REVISION = "29e01c4e8d000f4bcd70751be16fa94bf3d85a18"
 COSYVOICE_MODEL_ID = "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
 COSYVOICE_SYSTEM_PROMPT = "You are a helpful assistant."
+# Upstream's speech tokenizer asserts on prompts over 30 s; keep a margin.
+COSYVOICE_MAX_REFERENCE_SECONDS = 25
 
 COSYVOICE3_DESCRIPTOR = ModelDescriptor(
     key="cosyvoice3-0.5b-2512",
@@ -172,32 +175,26 @@ class CosyVoice3Model:
     def synthesize(self, text: str, voice_profile: dict[str, Any]) -> TTSAudio:
         if self.runtime is None:
             raise RuntimeError("model must be loaded before inference")
-        reference_key = voice_profile.get("reference_storage_key")
-        if not isinstance(reference_key, str) or not reference_key:
-            raise CosyVoiceRuntimeError("voice profile has no CosyVoice reference")
-        reference_path = self._reference_path(reference_key)
-        prompt_text = voice_profile.get("prompt_text")
         safe_text = self._sanitize_user_text(text)
-        if isinstance(prompt_text, str) and prompt_text.strip():
-            outputs = self.runtime.inference_zero_shot(
-                safe_text,
-                (
-                    f"{COSYVOICE_SYSTEM_PROMPT}<|endofprompt|>"
-                    f"{self._sanitize_user_text(prompt_text.strip())}"
-                ),
-                str(reference_path),
-                stream=False,
-            )
-        else:
-            outputs = self.runtime.inference_cross_lingual(
-                f"{COSYVOICE_SYSTEM_PROMPT}<|endofprompt|>{safe_text}",
-                str(reference_path),
-                stream=False,
-            )
-        return TTSAudio(
-            pcm_s16le=self._to_pcm(outputs),
-            sample_rate=self.runtime.sample_rate,
-        )
+        with self._reference(voice_profile) as (reference_path, prompt_text):
+            if prompt_text:
+                outputs = self.runtime.inference_zero_shot(
+                    safe_text,
+                    (
+                        f"{COSYVOICE_SYSTEM_PROMPT}<|endofprompt|>"
+                        f"{self._sanitize_user_text(prompt_text)}"
+                    ),
+                    str(reference_path),
+                    stream=False,
+                )
+            else:
+                outputs = self.runtime.inference_cross_lingual(
+                    f"{COSYVOICE_SYSTEM_PROMPT}<|endofprompt|>{safe_text}",
+                    str(reference_path),
+                    stream=False,
+                )
+            pcm = self._to_pcm(outputs)
+        return TTSAudio(pcm_s16le=pcm, sample_rate=self.runtime.sample_rate)
 
     def convert(self, pcm_s16le: bytes, sample_rate: int, voice_profile: dict[str, Any]) -> bytes:
         if self.runtime is None:
@@ -206,24 +203,13 @@ class CosyVoice3Model:
             raise CosyVoiceRuntimeError(
                 f"voice conversion input must be {self.runtime.sample_rate} Hz"
             )
-        reference_key = voice_profile.get("reference_storage_key")
-        if not isinstance(reference_key, str) or not reference_key:
-            raise CosyVoiceRuntimeError("voice profile has no CosyVoice reference")
-        reference_path = self._reference_path(reference_key)
-        descriptor, source_name = tempfile.mkstemp(prefix="cosyvoice-vc-", suffix=".wav")
-        os.close(descriptor)
-        source_path = Path(source_name)
-        try:
-            with wave.open(str(source_path), "wb") as source:
-                source.setnchannels(1)
-                source.setsampwidth(2)
-                source.setframerate(sample_rate)
-                source.writeframes(pcm_s16le)
+        with (
+            self._reference(voice_profile) as (reference_path, _),
+            self._temporary_wav(pcm_s16le, sample_rate, prefix="cosyvoice-vc-") as source_path,
+        ):
             converted = self._to_pcm(
                 self.runtime.inference_vc(str(source_path), str(reference_path), stream=False)
             )
-        finally:
-            source_path.unlink(missing_ok=True)
         # Speech tokens run at 25 Hz, so output length drifts by up to one token;
         # the pipeline contract requires the source frame count.
         return converted[: len(pcm_s16le)].ljust(len(pcm_s16le), b"\0")
@@ -234,6 +220,49 @@ class CosyVoice3Model:
         torch_module = sys.modules.get("torch")
         if torch_module is not None and torch_module.cuda.is_available():
             torch_module.cuda.empty_cache()
+
+    @contextmanager
+    def _reference(self, voice_profile: dict[str, Any]) -> Iterator[tuple[Path, str | None]]:
+        """Yield a usable prompt WAV and transcript; long samples are trimmed for upstream."""
+        reference_key = voice_profile.get("reference_storage_key")
+        if not isinstance(reference_key, str) or not reference_key:
+            raise CosyVoiceRuntimeError("voice profile has no CosyVoice reference")
+        path = self._reference_path(reference_key)
+        prompt_text = voice_profile.get("prompt_text")
+        transcript = prompt_text.strip() if isinstance(prompt_text, str) else ""
+        try:
+            with wave.open(str(path), "rb") as reference:
+                rate = reference.getframerate()
+                limit = rate * COSYVOICE_MAX_REFERENCE_SECONDS
+                too_long = reference.getnframes() > limit
+                head = reference.readframes(limit) if too_long else b""
+                channels, width = reference.getnchannels(), reference.getsampwidth()
+        except (EOFError, wave.Error) as error:
+            raise CosyVoiceRuntimeError("voice reference is not a PCM WAV") from error
+        if not too_long:
+            yield path, transcript or None
+            return
+        if channels != 1 or width != 2:
+            raise CosyVoiceRuntimeError("voice reference must be mono PCM S16LE")
+        # The transcript describes the whole sample, so it no longer matches the trimmed audio.
+        with self._temporary_wav(head, rate, prefix="cosyvoice-ref-") as trimmed:
+            yield trimmed, None
+
+    @staticmethod
+    @contextmanager
+    def _temporary_wav(pcm_s16le: bytes, sample_rate: int, *, prefix: str) -> Iterator[Path]:
+        descriptor, name = tempfile.mkstemp(prefix=prefix, suffix=".wav")
+        os.close(descriptor)
+        path = Path(name)
+        try:
+            with wave.open(str(path), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(sample_rate)
+                output.writeframes(pcm_s16le)
+            yield path
+        finally:
+            path.unlink(missing_ok=True)
 
     def _reference_path(self, key: str) -> Path:
         root = self.settings.storage_path.resolve()
