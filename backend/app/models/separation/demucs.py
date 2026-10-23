@@ -33,7 +33,7 @@ HTDEMUCS_DESCRIPTOR = ModelDescriptor(
         "usage": "research/non-commercial; re-review before commercial release",
         "stems": ["vocal", "instrumental"],
         "sample_rate": HTDEMUCS_SAMPLE_RATE,
-        "estimated_vram_mb": 2_048,
+        "estimated_vram_mb": 875,
     },
 )
 

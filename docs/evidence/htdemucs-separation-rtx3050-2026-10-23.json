@@ -1,0 +1,382 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-10-23",
+  "capability": "vocal_separation",
+  "accepted": true,
+  "model": {
+    "key": "demucs-htdemucs-4.1.0",
+    "runtime": "demucs",
+    "runtime_version": "4.1.0",
+    "weights_file": "955717e8-8726e21a.th",
+    "weights_sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+    "weights_url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th",
+    "code_license": "MIT",
+    "weights_license": "unspecified; maintainer described the weights as research-only",
+    "usage": "research/non-commercial"
+  },
+  "dataset": {
+    "id": "MUSDB18-7-WAV (test split)",
+    "source": "https://zenodo.org/records/3270814",
+    "license": "CC BY 4.0",
+    "zip_sha256": "a32b8d6f530ca39d75954179149611927f28367f51134b68f3e2cda963532ff6",
+    "tracks": 50,
+    "tracks_with_vocals": 50,
+    "excerpt_seconds": 7.0
+  },
+  "runtime": {
+    "python": "3.11",
+    "pytorch": "2.3.1+cu121",
+    "cuda": "12.1",
+    "shifts": 0,
+    "split": true,
+    "overlap": 0.25
+  },
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 3050 OEM",
+    "vram_total_mib": 8192,
+    "platform": "WSL Ubuntu 22.04"
+  },
+  "measurement": {
+    "cold_load_seconds": 0.7362,
+    "median_rtf": 0.0699,
+    "vocal_sdr_median_db": 8.69,
+    "vocal_sdr_mean_db": 8.438,
+    "vocal_sdr_p10_db": 3.877,
+    "vocal_sdr_min_db": 0.001,
+    "instrumental_sdr_median_db": 12.973,
+    "maximum_clipped_sample_ratio": 0.0,
+    "chunk_boundary": {
+      "audio_seconds": 35.0,
+      "chunk_count": 4,
+      "whole_vocal_sdr_db": 9.4404,
+      "chunked_vocal_sdr_db": 9.2238,
+      "vocal_sdr_drop_db": 0.2166
+    },
+    "device_vram_idle_mib": 1051,
+    "device_vram_peak_mib": 1926,
+    "device_vram_peak_delta_mib": 875,
+    "torch_peak_allocated_mib": 548.543
+  },
+  "checks": {
+    "vocal_sdr_median": true,
+    "instrumental_sdr_median": true,
+    "chunk_boundary": true,
+    "rtf_median": true,
+    "load_seconds": true,
+    "peak_vram_mb": true,
+    "clipping": true,
+    "finite": true
+  },
+  "thresholds": {
+    "vocal_sdr_median_min_db": 7.0,
+    "instrumental_sdr_median_min_db": 12.0,
+    "chunk_boundary_vocal_sdr_drop_max_db": 0.5,
+    "rtf_median_max": 0.5,
+    "load_seconds_max": 60.0,
+    "peak_vram_mb_max": 3000,
+    "clipped_sample_ratio_max": 0.001
+  },
+  "cases": [
+    {
+      "track": "AM Contra - Heart Peripheral",
+      "vocal_sdr_db": 11.027,
+      "instrumental_sdr_db": 14.57,
+      "rtf": 0.3898
+    },
+    {
+      "track": "Al James - Schoolboy Facination",
+      "vocal_sdr_db": 9.452,
+      "instrumental_sdr_db": 10.373,
+      "rtf": 0.0715
+    },
+    {
+      "track": "Angels In Amplifiers - I'm Alright",
+      "vocal_sdr_db": 11.504,
+      "instrumental_sdr_db": 13.455,
+      "rtf": 0.07
+    },
+    {
+      "track": "Arise - Run Run Run",
+      "vocal_sdr_db": 9.278,
+      "instrumental_sdr_db": 17.547,
+      "rtf": 0.0699
+    },
+    {
+      "track": "BKS - Bulldozer",
+      "vocal_sdr_db": 6.211,
+      "instrumental_sdr_db": 12.302,
+      "rtf": 0.0712
+    },
+    {
+      "track": "BKS - Too Much",
+      "vocal_sdr_db": 11.584,
+      "instrumental_sdr_db": 14.736,
+      "rtf": 0.0706
+    },
+    {
+      "track": "Ben Carrigan - We'll Talk About It All Tonight",
+      "vocal_sdr_db": 5.7,
+      "instrumental_sdr_db": 12.372,
+      "rtf": 0.0696
+    },
+    {
+      "track": "Bobby Nobody - Stitch Up",
+      "vocal_sdr_db": 8.744,
+      "instrumental_sdr_db": 14.243,
+      "rtf": 0.0696
+    },
+    {
+      "track": "Buitraker - Revo X",
+      "vocal_sdr_db": 3.877,
+      "instrumental_sdr_db": 12.101,
+      "rtf": 0.0714
+    },
+    {
+      "track": "Carlos Gonzalez - A Place For Us",
+      "vocal_sdr_db": 6.816,
+      "instrumental_sdr_db": 6.308,
+      "rtf": 0.0709
+    },
+    {
+      "track": "Cristina Vane - So Easy",
+      "vocal_sdr_db": 15.453,
+      "instrumental_sdr_db": 19.837,
+      "rtf": 0.0687
+    },
+    {
+      "track": "Detsky Sad - Walkie Talkie",
+      "vocal_sdr_db": 9.567,
+      "instrumental_sdr_db": 10.366,
+      "rtf": 0.0697
+    },
+    {
+      "track": "Enda Reilly - Cur An Long Ag Seol",
+      "vocal_sdr_db": 11.783,
+      "instrumental_sdr_db": 12.844,
+      "rtf": 0.0685
+    },
+    {
+      "track": "Forkupines - Semantics",
+      "vocal_sdr_db": 9.526,
+      "instrumental_sdr_db": 12.41,
+      "rtf": 0.0689
+    },
+    {
+      "track": "Georgia Wonder - Siren",
+      "vocal_sdr_db": 6.217,
+      "instrumental_sdr_db": 9.37,
+      "rtf": 0.0697
+    },
+    {
+      "track": "Girls Under Glass - We Feel Alright",
+      "vocal_sdr_db": 5.954,
+      "instrumental_sdr_db": 10.351,
+      "rtf": 0.0689
+    },
+    {
+      "track": "Hollow Ground - Ill Fate",
+      "vocal_sdr_db": 7.389,
+      "instrumental_sdr_db": 13.691,
+      "rtf": 0.0698
+    },
+    {
+      "track": "James Elder & Mark M Thompson - The English Actor",
+      "vocal_sdr_db": 5.894,
+      "instrumental_sdr_db": 8.079,
+      "rtf": 0.0711
+    },
+    {
+      "track": "Juliet's Rescue - Heartbeats",
+      "vocal_sdr_db": 11.229,
+      "instrumental_sdr_db": 17.471,
+      "rtf": 0.0711
+    },
+    {
+      "track": "Little Chicago's Finest - My Own",
+      "vocal_sdr_db": 10.128,
+      "instrumental_sdr_db": 15.049,
+      "rtf": 0.0703
+    },
+    {
+      "track": "Louis Cressy Band - Good Time",
+      "vocal_sdr_db": 8.652,
+      "instrumental_sdr_db": 14.405,
+      "rtf": 0.0704
+    },
+    {
+      "track": "Lyndsey Ollard - Catching Up",
+      "vocal_sdr_db": 11.096,
+      "instrumental_sdr_db": 12.068,
+      "rtf": 0.0695
+    },
+    {
+      "track": "M.E.R.C. Music - Knockout",
+      "vocal_sdr_db": 7.302,
+      "instrumental_sdr_db": 9.836,
+      "rtf": 0.0703
+    },
+    {
+      "track": "Moosmusic - Big Dummy Shake",
+      "vocal_sdr_db": 12.72,
+      "instrumental_sdr_db": 15.742,
+      "rtf": 0.0698
+    },
+    {
+      "track": "Motor Tapes - Shore",
+      "vocal_sdr_db": 0.001,
+      "instrumental_sdr_db": 11.138,
+      "rtf": 0.0704
+    },
+    {
+      "track": "Mu - Too Bright",
+      "vocal_sdr_db": 15.002,
+      "instrumental_sdr_db": 18.153,
+      "rtf": 0.0696
+    },
+    {
+      "track": "Nerve 9 - Pray For The Rain",
+      "vocal_sdr_db": 8.037,
+      "instrumental_sdr_db": 8.289,
+      "rtf": 0.0697
+    },
+    {
+      "track": "PR - Happy Daze",
+      "vocal_sdr_db": 2.648,
+      "instrumental_sdr_db": 24.033,
+      "rtf": 0.0707
+    },
+    {
+      "track": "PR - Oh No",
+      "vocal_sdr_db": 2.88,
+      "instrumental_sdr_db": 8.93,
+      "rtf": 0.0698
+    },
+    {
+      "track": "Punkdisco - Oral Hygiene",
+      "vocal_sdr_db": 11.043,
+      "instrumental_sdr_db": 15.91,
+      "rtf": 0.0695
+    },
+    {
+      "track": "Raft Monk - Tiring",
+      "vocal_sdr_db": 6.525,
+      "instrumental_sdr_db": 11.803,
+      "rtf": 0.0705
+    },
+    {
+      "track": "Sambasevam Shanmugam - Kaathaadi",
+      "vocal_sdr_db": 13.643,
+      "instrumental_sdr_db": 15.495,
+      "rtf": 0.0692
+    },
+    {
+      "track": "Secretariat - Borderline",
+      "vocal_sdr_db": 7.668,
+      "instrumental_sdr_db": 9.908,
+      "rtf": 0.07
+    },
+    {
+      "track": "Secretariat - Over The Top",
+      "vocal_sdr_db": 10.767,
+      "instrumental_sdr_db": 16.721,
+      "rtf": 0.0686
+    },
+    {
+      "track": "Side Effects Project - Sing With Me",
+      "vocal_sdr_db": 12.925,
+      "instrumental_sdr_db": 15.258,
+      "rtf": 0.0701
+    },
+    {
+      "track": "Signe Jakobsen - What Have You Done To Me",
+      "vocal_sdr_db": 11.801,
+      "instrumental_sdr_db": 14.764,
+      "rtf": 0.0694
+    },
+    {
+      "track": "Skelpolu - Resurrection",
+      "vocal_sdr_db": 0.162,
+      "instrumental_sdr_db": 5.452,
+      "rtf": 0.0709
+    },
+    {
+      "track": "Speak Softly - Broken Man",
+      "vocal_sdr_db": 7.087,
+      "instrumental_sdr_db": 16.709,
+      "rtf": 0.0719
+    },
+    {
+      "track": "Speak Softly - Like Horses",
+      "vocal_sdr_db": 7.38,
+      "instrumental_sdr_db": 12.397,
+      "rtf": 0.0684
+    },
+    {
+      "track": "The Doppler Shift - Atrophy",
+      "vocal_sdr_db": 7.546,
+      "instrumental_sdr_db": 12.336,
+      "rtf": 0.0702
+    },
+    {
+      "track": "The Easton Ellises (Baumi) - SDRNR",
+      "vocal_sdr_db": 4.904,
+      "instrumental_sdr_db": 7.967,
+      "rtf": 0.0715
+    },
+    {
+      "track": "The Easton Ellises - Falcon 69",
+      "vocal_sdr_db": 3.117,
+      "instrumental_sdr_db": 7.591,
+      "rtf": 0.0701
+    },
+    {
+      "track": "The Long Wait - Dark Horses",
+      "vocal_sdr_db": 9.589,
+      "instrumental_sdr_db": 13.101,
+      "rtf": 0.0696
+    },
+    {
+      "track": "The Mountaineering Club - Mallory",
+      "vocal_sdr_db": 9.273,
+      "instrumental_sdr_db": 16.055,
+      "rtf": 0.0697
+    },
+    {
+      "track": "The Sunshine Garcia Band - For I Am The Moon",
+      "vocal_sdr_db": 11.899,
+      "instrumental_sdr_db": 15.761,
+      "rtf": 0.0692
+    },
+    {
+      "track": "Timboz - Pony",
+      "vocal_sdr_db": 6.149,
+      "instrumental_sdr_db": 14.833,
+      "rtf": 0.0705
+    },
+    {
+      "track": "Tom McKenzie - Directions",
+      "vocal_sdr_db": 8.154,
+      "instrumental_sdr_db": 16.433,
+      "rtf": 0.0698
+    },
+    {
+      "track": "Triviul feat. The Fiend - Widow",
+      "vocal_sdr_db": 10.511,
+      "instrumental_sdr_db": 9.871,
+      "rtf": 0.0714
+    },
+    {
+      "track": "We Fell From The Sky - Not You",
+      "vocal_sdr_db": 7.351,
+      "instrumental_sdr_db": 14.381,
+      "rtf": 0.0693
+    },
+    {
+      "track": "Zeno - Signs",
+      "vocal_sdr_db": 8.728,
+      "instrumental_sdr_db": 10.947,
+      "rtf": 0.0693
+    }
+  ],
+  "corpus": "backend/tests/model/fixtures/separation_acceptance.json"
+}

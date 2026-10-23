@@ -172,6 +172,57 @@ The script expects `models/acceptance/synthetic-heami-ko-kr-v1.wav`,
 `models/acceptance/vc/synthetic-zira-en-us-v1.wav`, and the Phase 11 outputs
 in `models/acceptance/cosyvoice3/`, and writes `models/acceptance/vc/report.json`.
 
+## Vocal separation acceptance (Phase 13)
+
+The singing pipeline's separator is **Demucs v4 htdemucs** (`demucs==4.1.0`,
+weights `955717e8-8726e21a.th`, SHA-256 `8726e21a…aa8b4`), adapter key
+`demucs-htdemucs-4.1.0`.
+
+**License status: research / non-commercial only.** The Demucs code is MIT.
+The weights carry no explicit license; the maintainer has described them as
+research-only because of the MUSDB training-data terms, and a Hugging Face MIT
+tag on a mirror is disputed and unanswered. Every public alternative reviewed
+(Mel-Band/BS-RoFormer checkpoints) is equally unclear. The project owner chose
+research use on 2026-10-23, so the adapter is opt-in (`ENABLE_DEMUCS=false` by
+default, also in the GPU compose override) and its descriptor says so. Repeat
+this review before any commercial release.
+
+- [Demucs repository and MIT license](https://github.com/adefossez/demucs)
+- [Hub discussion on the weights' MIT tag](https://huggingface.co/adefossez/HTDemucs/discussions/1)
+- [MUSDB18 7 s excerpts, CC BY 4.0](https://zenodo.org/records/3270814)
+
+The corpus is the 50 MUSDB18 **test** excerpts (7 s, 44.1 kHz stereo), which
+are not in the htdemucs training set. SDR is whole-excerpt
+`10·log10(‖s‖² / ‖s − ŝ‖²)` on stereo int16, instrumental = drums + bass +
+other. The boundary check concatenates five excerpts (35 s) and compares
+separating the whole signal against the worker's fixed 10 s chunks. Inference
+uses `shifts=0` for deterministic output, which costs roughly 0.2 dB SDR versus
+the CLI default. Thresholds were fixed before the run and sit below the
+published ~9 dB vocal SDR to allow for short excerpts:
+
+| Metric | Result | Gate |
+|---|---:|---:|
+| Median vocal SDR (50 excerpts) | 8.690 dB | >= 7.0 |
+| Median instrumental SDR | 12.973 dB | >= 12.0 |
+| Vocal SDR loss from 10 s chunking | 0.217 dB | <= 0.5 |
+| Median RTF | 0.070 | <= 0.5 |
+| Cold load | 0.736 s | <= 60 |
+| Peak VRAM above idle baseline | 875 MiB | <= 3,000 |
+| Max clipped-sample ratio | 0.000 | <= 0.001 |
+
+Instrumental SDR cleared its gate by under 1 dB. Two excerpts scored near
+0 dB vocal SDR: in *Motor Tapes – Shore* the vocal sits 11 dB under the mix,
+while *Skelpolu – Resurrection* has an ordinary vocal level and is a genuine
+miss. The 10th-percentile vocal SDR is 3.9 dB. The measured 875 MiB is the
+adapter's VRAM admission estimate. Run on 2026-10-23, same hardware and
+environment as above; summary in
+`docs/evidence/htdemucs-separation-rtx3050-2026-10-23.json`.
+
+```bash
+python scripts/download_demucs.py --output ~/demucs-htdemucs
+python scripts/benchmark_demucs.py   --musdb-root ~/datasets/musdb18-7/wav --model ~/demucs-htdemucs
+```
+
 ## Provenance and release duties
 
 - Never commit model weights or voice samples.
