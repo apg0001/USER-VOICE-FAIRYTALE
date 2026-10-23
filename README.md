@@ -221,7 +221,7 @@ cd frontend && npm ci
 | `CUDA_DEVICE` | `cuda:0` | Worker device |
 | `MAX_UPLOAD_SIZE` | 500 MiB | 서버측 상한 |
 | `MODEL_CACHE_LIMIT` | 2 | Worker에 동시에 유지할 모델 수; Singing은 최소 2 필요 |
-| `GPU_VRAM_RESERVE_MB` | 512 | model admission 후 남겨 둘 VRAM 안전 여유 |
+| `GPU_VRAM_RESERVE_MB` | 512 | model admission 후 남겨 둘 VRAM 안전 여유 (8 GB 데스크톱 GPU는 256, docs/model-manager.md) |
 | `SSE_POLL_INTERVAL_SECONDS` | 1 | SSE가 DB 상태를 다시 읽는 간격 |
 | `SSE_HEARTBEAT_SECONDS` | 15 | proxy idle timeout 방지 heartbeat 간격 |
 | `AUTH_MODE` | `development_header` | 개발 header 또는 운영 trusted proxy |

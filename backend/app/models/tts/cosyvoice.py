@@ -1,6 +1,7 @@
 import gc
 import importlib
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -95,6 +96,25 @@ class CosyVoiceRuntimeError(RuntimeError):
     pass
 
 
+class _UpstreamRecordFilter(logging.Filter):
+    """Drops root-logger records emitted from inside the pinned runtime checkout."""
+
+    def __init__(self, runtime_path: Path) -> None:
+        super().__init__()
+        self.prefix = str(runtime_path)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.pathname.startswith(self.prefix)
+
+
+def _silence_upstream_root_logging(runtime_path: Path) -> None:
+    # Upstream logs raw synthesis and prompt text via logging.info/warning on the root logger.
+    root = logging.getLogger()
+    prefix = str(runtime_path)
+    if not any(isinstance(f, _UpstreamRecordFilter) and f.prefix == prefix for f in root.filters):
+        root.addFilter(_UpstreamRecordFilter(runtime_path))
+
+
 def _load_runtime(runtime_path: Path, model_path: Path, fp16: bool) -> CosyVoiceRuntime:
     matcha_path = runtime_path / "third_party" / "Matcha-TTS"
     for path in (runtime_path, matcha_path):
@@ -142,6 +162,7 @@ class CosyVoice3Model:
                 f"CosyVoice checkpoint is incomplete ({len(missing)} files missing)"
             )
         self._validate_manifest(model_path / "voice-model-manifest.json")
+        _silence_upstream_root_logging(runtime_path)
         self.runtime = self.runtime_factory(
             runtime_path,
             model_path,
