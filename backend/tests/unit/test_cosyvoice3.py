@@ -10,6 +10,7 @@ import pytest
 
 from app.core.config import Settings
 from app.models.tts.cosyvoice import (
+    COSYVOICE_MAX_REFERENCE_SECONDS,
     COSYVOICE_MODEL_ID,
     COSYVOICE_MODEL_REVISION,
     COSYVOICE_RUNTIME_REVISION,
@@ -65,6 +66,8 @@ class FakeRuntime:
         *,
         stream: bool,
     ) -> list[dict[str, FakeTensor]]:
+        with wave.open(prompt_wav, "rb") as prompt:
+            self.prompt_frames = prompt.getnframes()
         self.calls.append(("cross_lingual", (text, prompt_wav, stream)))
         return [{"tts_speech": FakeTensor([0.0, 0.25])}]
 
@@ -310,3 +313,27 @@ def test_cosyvoice_load_drops_upstream_root_records_with_user_text(tmp_path: Pat
         assert root.filter(record(str(tmp_path / "app" / "worker.py")))
     finally:
         root.filters[:] = before
+
+
+def test_cosyvoice_trims_long_reference_and_drops_unaligned_transcript(tmp_path: Path) -> None:
+    settings, _ = prepare_model_files(tmp_path)
+    long_reference = settings.storage_path / "profiles" / "long.wav"
+    with wave.open(str(long_reference), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(24_000)
+        output.writeframes(bytes(2 * 24_000 * 26))
+    runtime = FakeRuntime()
+    model = CosyVoice3Model(settings, runtime_factory=lambda *_args: runtime)
+    model.load()
+
+    model.synthesize(
+        "긴 참조 음성",
+        {"reference_storage_key": "profiles/long.wav", "prompt_text": "26초 전체 원문"},
+    )
+
+    kind, (_, prompt_wav, _) = runtime.calls[0]
+    assert kind == "cross_lingual"
+    assert runtime.prompt_frames == 24_000 * COSYVOICE_MAX_REFERENCE_SECONDS
+    assert Path(prompt_wav) != long_reference.resolve()
+    assert not Path(prompt_wav).exists()

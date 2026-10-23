@@ -3,8 +3,12 @@ from celery import Celery
 from celery.signals import worker_process_init, worker_process_shutdown
 
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 
 settings = get_settings()
+# Worker and beat never import app.main; without this structlog falls back to its dev
+# console renderer, which skips redaction and prints traceback locals (user text).
+configure_logging(settings.log_level)
 log = structlog.get_logger(__name__)
 celery_app = Celery(
     "voice_fairy_tale",
