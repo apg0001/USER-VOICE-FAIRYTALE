@@ -1,0 +1,53 @@
+name: Korean TTS acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      reference_path:
+        description: Absolute runner path to a consented WAV matching the fixed corpus transcript
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  cosyvoice3:
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate reference
+        env:
+          REFERENCE_PATH: ${{ inputs.reference_path }}
+        run: test -f "$REFERENCE_PATH"
+      - name: Build pinned worker
+        run: docker build -f backend/Dockerfile.worker-cosyvoice -t voice-worker:acceptance backend
+      - name: Download pinned checkpoint
+        run: |
+          mkdir -p models
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspace" -w /workspace voice-worker:acceptance \
+            python scripts/download_cosyvoice3.py
+      - name: Verify checkpoint hashes
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspace" -w /workspace voice-worker:acceptance \
+            python scripts/verify_cosyvoice3.py
+      - name: Run fixed Korean corpus
+        env:
+          REFERENCE_PATH: ${{ inputs.reference_path }}
+        run: |
+          docker run --rm --gpus all --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspace" -v "$REFERENCE_PATH:/reference.wav:ro" \
+            -w /workspace voice-worker:acceptance \
+            python scripts/benchmark_cosyvoice3.py \
+              --runtime /opt/cosyvoice \
+              --model /workspace/models/cosyvoice3-0.5b-2512 \
+              --reference /reference.wav
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: cosyvoice3-acceptance-report
+          path: models/acceptance/cosyvoice3/report.json
+          if-no-files-found: error

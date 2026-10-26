@@ -1,0 +1,779 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-10-23",
+  "capability": "singing_voice_conversion",
+  "accepted": false,
+  "failed_checks": [
+    "rpa50_mean"
+  ],
+  "model": {
+    "key": "seed-vc-svc-f0-44k-v2",
+    "runtime_revision": "51383efd921027683c89e5348211d93ff12ac2a8",
+    "components": [
+      {
+        "repo_id": "Plachta/Seed-VC",
+        "revision": "257283f9f41585055e8f858fba4fd044e5caed6e",
+        "license": "GPL-3.0"
+      },
+      {
+        "repo_id": "lj1995/VoiceConversionWebUI",
+        "revision": "e6d0c1a17da07c33557852f9dfa2bd44cc75737d",
+        "license": "MIT"
+      },
+      {
+        "repo_id": "funasr/campplus",
+        "revision": "e4b6ede7ce16997aff4ae69fbca1f0175e2afede",
+        "license": "Apache-2.0"
+      },
+      {
+        "repo_id": "nvidia/bigvgan_v2_44khz_128band_512x",
+        "revision": "95a9d1dcb12906c03edd938d77b9333d6ded7dfb",
+        "license": "MIT"
+      },
+      {
+        "repo_id": "openai/whisper-small",
+        "revision": "973afd24965f72e36ca33b3055d56a652f456b4d",
+        "license": "Apache-2.0"
+      }
+    ],
+    "diffusion_steps": 30,
+    "auto_f0_adjust": false,
+    "usage": "research/non-commercial; GPL-3.0"
+  },
+  "dataset": {
+    "id": "MUSDB18-7-WAV test vocals.wav",
+    "license": "CC BY 4.0",
+    "tracks_after_voiced_filter": 47,
+    "cases": 94
+  },
+  "verifiers": {
+    "speaker": "Resemblyzer GE2E (CPU)",
+    "pitch": "WORLD harvest, 10 ms"
+  },
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 3050 OEM",
+    "vram_total_mib": 8192,
+    "platform": "WSL Ubuntu 22.04",
+    "pytorch": "2.3.1+cu121",
+    "cuda": "12.1"
+  },
+  "measurement": {
+    "cold_load_seconds": 11.213,
+    "median_rtf": 0.7869,
+    "mean_target_cosine": 0.7615,
+    "mean_target_cosine_gain": 0.2839,
+    "mean_rpa50": 0.6378,
+    "min_rpa50": 0.1649,
+    "maximum_clipped_sample_ratio": 4.5351473922902495e-05,
+    "pipeline": {
+      "audio_seconds": 35.0,
+      "chunk_count": 4,
+      "rtf": 0.8516493601714306,
+      "frame_count_preserved": true
+    },
+    "pipeline_device_vram_peak_delta_mib": 3083,
+    "torch_peak_allocated_mib": 2569.287,
+    "by_target": {
+      "synthetic-heami-ko-kr-v1": {
+        "rtf": 0.8188,
+        "target_cosine": 0.7665,
+        "target_cosine_gain": 0.2836,
+        "rpa50": 0.6382,
+        "clipped_sample_ratio": 0.0
+      },
+      "synthetic-zira-en-us-v1": {
+        "rtf": 0.7812,
+        "target_cosine": 0.7565,
+        "target_cosine_gain": 0.2842,
+        "rpa50": 0.6374,
+        "clipped_sample_ratio": 0.0
+      }
+    }
+  },
+  "checks": {
+    "target_cosine_gain_mean": true,
+    "rpa50_mean": false,
+    "rtf_median": true,
+    "pipeline_rtf": true,
+    "pipeline_frames": true,
+    "load_seconds": true,
+    "pipeline_peak_vram_mb": true,
+    "clipping": true,
+    "finite": true
+  },
+  "thresholds": {
+    "target_cosine_gain_mean_min": 0.1,
+    "rpa50_mean_min": 0.75,
+    "rtf_median_max": 2.0,
+    "pipeline_rtf_max": 3.0,
+    "load_seconds_max": 180.0,
+    "pipeline_peak_vram_mb_max": 7600,
+    "clipped_sample_ratio_max": 0.001
+  },
+  "diagnosis": {
+    "summary": "Output follows the model's own RMVPE F0 input; on polyphonic/backing-vocal stems RMVPE and an independent tracker disagree about the source melody, and that disagreement carries into the output.",
+    "sample_tracks": 8,
+    "evidence": "Per track, converted RPA50 (harvest) tracks harvest-vs-RMVPE agreement on the unconverted source (e.g. 0.195 vs 0.248, 0.344 vs 0.340, 0.902 vs 0.907); a 44.1k->16k->44.1k round trip of the source scores 0.92-1.00."
+  },
+  "cases": [
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Al James - Schoolboy Facination",
+      "rtf": 1.478,
+      "target_cosine_gain": 0.3248,
+      "rpa50": 0.3889
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Angels In Amplifiers - I'm Alright",
+      "rtf": 0.797,
+      "target_cosine_gain": 0.3059,
+      "rpa50": 0.7617
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Arise - Run Run Run",
+      "rtf": 0.795,
+      "target_cosine_gain": 0.2507,
+      "rpa50": 0.6687
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "BKS - Bulldozer",
+      "rtf": 0.782,
+      "target_cosine_gain": 0.2613,
+      "rpa50": 0.5649
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "BKS - Too Much",
+      "rtf": 0.784,
+      "target_cosine_gain": 0.375,
+      "rpa50": 0.6345
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Ben Carrigan - We'll Talk About It All Tonight",
+      "rtf": 0.786,
+      "target_cosine_gain": 0.3079,
+      "rpa50": 0.6928
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Bobby Nobody - Stitch Up",
+      "rtf": 0.791,
+      "target_cosine_gain": 0.331,
+      "rpa50": 0.7111
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Buitraker - Revo X",
+      "rtf": 0.792,
+      "target_cosine_gain": 0.3567,
+      "rpa50": 0.5641
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Carlos Gonzalez - A Place For Us",
+      "rtf": 0.793,
+      "target_cosine_gain": 0.3353,
+      "rpa50": 0.6246
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Cristina Vane - So Easy",
+      "rtf": 0.814,
+      "target_cosine_gain": 0.235,
+      "rpa50": 0.8156
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Detsky Sad - Walkie Talkie",
+      "rtf": 0.786,
+      "target_cosine_gain": 0.2217,
+      "rpa50": 0.7344
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Enda Reilly - Cur An Long Ag Seol",
+      "rtf": 0.794,
+      "target_cosine_gain": 0.2834,
+      "rpa50": 0.7429
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Forkupines - Semantics",
+      "rtf": 0.791,
+      "target_cosine_gain": 0.2834,
+      "rpa50": 0.5557
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Georgia Wonder - Siren",
+      "rtf": 0.873,
+      "target_cosine_gain": 0.279,
+      "rpa50": 0.6478
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Girls Under Glass - We Feel Alright",
+      "rtf": 0.779,
+      "target_cosine_gain": 0.3062,
+      "rpa50": 0.5984
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Hollow Ground - Ill Fate",
+      "rtf": 0.782,
+      "target_cosine_gain": 0.3372,
+      "rpa50": 0.1649
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "James Elder & Mark M Thompson - The English Actor",
+      "rtf": 0.801,
+      "target_cosine_gain": 0.2283,
+      "rpa50": 0.643
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Juliet's Rescue - Heartbeats",
+      "rtf": 0.809,
+      "target_cosine_gain": 0.2085,
+      "rpa50": 0.7459
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Little Chicago's Finest - My Own",
+      "rtf": 0.798,
+      "target_cosine_gain": 0.3,
+      "rpa50": 0.6559
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Louis Cressy Band - Good Time",
+      "rtf": 0.79,
+      "target_cosine_gain": 0.2041,
+      "rpa50": 0.8621
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Lyndsey Ollard - Catching Up",
+      "rtf": 0.82,
+      "target_cosine_gain": 0.1858,
+      "rpa50": 0.8351
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "M.E.R.C. Music - Knockout",
+      "rtf": 0.796,
+      "target_cosine_gain": 0.4201,
+      "rpa50": 0.6864
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Moosmusic - Big Dummy Shake",
+      "rtf": 0.797,
+      "target_cosine_gain": 0.3648,
+      "rpa50": 0.7629
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Motor Tapes - Shore",
+      "rtf": 0.807,
+      "target_cosine_gain": 0.0212,
+      "rpa50": 0.8944
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Mu - Too Bright",
+      "rtf": 0.805,
+      "target_cosine_gain": 0.3706,
+      "rpa50": 0.6969
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Nerve 9 - Pray For The Rain",
+      "rtf": 0.818,
+      "target_cosine_gain": 0.1505,
+      "rpa50": 0.7973
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "PR - Happy Daze",
+      "rtf": 0.852,
+      "target_cosine_gain": 0.173,
+      "rpa50": 0.2957
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "PR - Oh No",
+      "rtf": 0.802,
+      "target_cosine_gain": 0.3882,
+      "rpa50": 0.5207
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Punkdisco - Oral Hygiene",
+      "rtf": 0.809,
+      "target_cosine_gain": 0.17,
+      "rpa50": 0.5191
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Raft Monk - Tiring",
+      "rtf": 1.055,
+      "target_cosine_gain": 0.369,
+      "rpa50": 0.5647
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Sambasevam Shanmugam - Kaathaadi",
+      "rtf": 0.789,
+      "target_cosine_gain": 0.1221,
+      "rpa50": 0.8402
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Secretariat - Borderline",
+      "rtf": 0.789,
+      "target_cosine_gain": 0.4082,
+      "rpa50": 0.4987
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Secretariat - Over The Top",
+      "rtf": 0.804,
+      "target_cosine_gain": 0.3439,
+      "rpa50": 0.6899
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Side Effects Project - Sing With Me",
+      "rtf": 0.799,
+      "target_cosine_gain": 0.3255,
+      "rpa50": 0.5466
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Signe Jakobsen - What Have You Done To Me",
+      "rtf": 0.794,
+      "target_cosine_gain": 0.2084,
+      "rpa50": 0.6597
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Skelpolu - Resurrection",
+      "rtf": 0.792,
+      "target_cosine_gain": 0.3455,
+      "rpa50": 0.304
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Speak Softly - Like Horses",
+      "rtf": 0.814,
+      "target_cosine_gain": 0.1502,
+      "rpa50": 0.6667
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "The Doppler Shift - Atrophy",
+      "rtf": 0.789,
+      "target_cosine_gain": 0.1642,
+      "rpa50": 0.759
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "The Easton Ellises (Baumi) - SDRNR",
+      "rtf": 0.789,
+      "target_cosine_gain": 0.3479,
+      "rpa50": 0.4337
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "The Easton Ellises - Falcon 69",
+      "rtf": 0.789,
+      "target_cosine_gain": 0.3231,
+      "rpa50": 0.6647
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "The Long Wait - Dark Horses",
+      "rtf": 0.791,
+      "target_cosine_gain": 0.3688,
+      "rpa50": 0.2835
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "The Mountaineering Club - Mallory",
+      "rtf": 0.787,
+      "target_cosine_gain": 0.4211,
+      "rpa50": 0.6216
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "The Sunshine Garcia Band - For I Am The Moon",
+      "rtf": 0.789,
+      "target_cosine_gain": 0.276,
+      "rpa50": 0.6963
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Tom McKenzie - Directions",
+      "rtf": 0.797,
+      "target_cosine_gain": 0.3706,
+      "rpa50": 0.7338
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Triviul feat. The Fiend - Widow",
+      "rtf": 0.791,
+      "target_cosine_gain": 0.2009,
+      "rpa50": 0.737
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "We Fell From The Sky - Not You",
+      "rtf": 0.809,
+      "target_cosine_gain": 0.3548,
+      "rpa50": 0.6606
+    },
+    {
+      "target": "synthetic-heami-ko-kr-v1",
+      "track": "Zeno - Signs",
+      "rtf": 0.793,
+      "target_cosine_gain": 0.2515,
+      "rpa50": 0.8488
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Al James - Schoolboy Facination",
+      "rtf": 0.797,
+      "target_cosine_gain": 0.2835,
+      "rpa50": 0.3713
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Angels In Amplifiers - I'm Alright",
+      "rtf": 0.779,
+      "target_cosine_gain": 0.3619,
+      "rpa50": 0.789
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Arise - Run Run Run",
+      "rtf": 0.778,
+      "target_cosine_gain": 0.4604,
+      "rpa50": 0.6871
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "BKS - Bulldozer",
+      "rtf": 0.78,
+      "target_cosine_gain": 0.1431,
+      "rpa50": 0.5496
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "BKS - Too Much",
+      "rtf": 0.776,
+      "target_cosine_gain": 0.3234,
+      "rpa50": 0.6457
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Ben Carrigan - We'll Talk About It All Tonight",
+      "rtf": 0.782,
+      "target_cosine_gain": 0.3809,
+      "rpa50": 0.6962
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Bobby Nobody - Stitch Up",
+      "rtf": 0.801,
+      "target_cosine_gain": 0.3165,
+      "rpa50": 0.7419
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Buitraker - Revo X",
+      "rtf": 0.781,
+      "target_cosine_gain": 0.3931,
+      "rpa50": 0.5694
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Carlos Gonzalez - A Place For Us",
+      "rtf": 0.779,
+      "target_cosine_gain": 0.3679,
+      "rpa50": 0.6412
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Cristina Vane - So Easy",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.2177,
+      "rpa50": 0.8285
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Detsky Sad - Walkie Talkie",
+      "rtf": 0.778,
+      "target_cosine_gain": 0.1909,
+      "rpa50": 0.7425
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Enda Reilly - Cur An Long Ag Seol",
+      "rtf": 0.775,
+      "target_cosine_gain": 0.301,
+      "rpa50": 0.75
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Forkupines - Semantics",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.2959,
+      "rpa50": 0.584
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Georgia Wonder - Siren",
+      "rtf": 0.778,
+      "target_cosine_gain": 0.2976,
+      "rpa50": 0.6746
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Girls Under Glass - We Feel Alright",
+      "rtf": 0.776,
+      "target_cosine_gain": 0.3389,
+      "rpa50": 0.6047
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Hollow Ground - Ill Fate",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.4311,
+      "rpa50": 0.1927
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "James Elder & Mark M Thompson - The English Actor",
+      "rtf": 0.781,
+      "target_cosine_gain": 0.2428,
+      "rpa50": 0.6344
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Juliet's Rescue - Heartbeats",
+      "rtf": 0.806,
+      "target_cosine_gain": 0.1228,
+      "rpa50": 0.7563
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Little Chicago's Finest - My Own",
+      "rtf": 0.779,
+      "target_cosine_gain": 0.3934,
+      "rpa50": 0.6129
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Louis Cressy Band - Good Time",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.2379,
+      "rpa50": 0.8456
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Lyndsey Ollard - Catching Up",
+      "rtf": 0.776,
+      "target_cosine_gain": 0.1246,
+      "rpa50": 0.8613
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "M.E.R.C. Music - Knockout",
+      "rtf": 0.776,
+      "target_cosine_gain": 0.4426,
+      "rpa50": 0.7045
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Moosmusic - Big Dummy Shake",
+      "rtf": 0.78,
+      "target_cosine_gain": 0.3332,
+      "rpa50": 0.7675
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Motor Tapes - Shore",
+      "rtf": 0.775,
+      "target_cosine_gain": -0.0876,
+      "rpa50": 0.8987
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Mu - Too Bright",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.2722,
+      "rpa50": 0.718
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Nerve 9 - Pray For The Rain",
+      "rtf": 0.778,
+      "target_cosine_gain": 0.0926,
+      "rpa50": 0.776
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "PR - Happy Daze",
+      "rtf": 0.78,
+      "target_cosine_gain": 0.0933,
+      "rpa50": 0.2688
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "PR - Oh No",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.361,
+      "rpa50": 0.4892
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Punkdisco - Oral Hygiene",
+      "rtf": 0.778,
+      "target_cosine_gain": 0.205,
+      "rpa50": 0.505
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Raft Monk - Tiring",
+      "rtf": 0.79,
+      "target_cosine_gain": 0.3863,
+      "rpa50": 0.5647
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Sambasevam Shanmugam - Kaathaadi",
+      "rtf": 0.779,
+      "target_cosine_gain": 0.2561,
+      "rpa50": 0.6476
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Secretariat - Borderline",
+      "rtf": 0.778,
+      "target_cosine_gain": 0.3785,
+      "rpa50": 0.5202
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Secretariat - Over The Top",
+      "rtf": 0.781,
+      "target_cosine_gain": 0.3431,
+      "rpa50": 0.6661
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Side Effects Project - Sing With Me",
+      "rtf": 0.78,
+      "target_cosine_gain": 0.3656,
+      "rpa50": 0.5814
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Signe Jakobsen - What Have You Done To Me",
+      "rtf": 0.779,
+      "target_cosine_gain": 0.1534,
+      "rpa50": 0.6758
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Skelpolu - Resurrection",
+      "rtf": 0.792,
+      "target_cosine_gain": 0.3623,
+      "rpa50": 0.3397
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Speak Softly - Like Horses",
+      "rtf": 0.787,
+      "target_cosine_gain": 0.1356,
+      "rpa50": 0.6606
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "The Doppler Shift - Atrophy",
+      "rtf": 0.782,
+      "target_cosine_gain": 0.2122,
+      "rpa50": 0.7508
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "The Easton Ellises (Baumi) - SDRNR",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.2832,
+      "rpa50": 0.5325
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "The Easton Ellises - Falcon 69",
+      "rtf": 0.78,
+      "target_cosine_gain": 0.2924,
+      "rpa50": 0.6908
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "The Long Wait - Dark Horses",
+      "rtf": 0.778,
+      "target_cosine_gain": 0.2724,
+      "rpa50": 0.2254
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "The Mountaineering Club - Mallory",
+      "rtf": 0.78,
+      "target_cosine_gain": 0.489,
+      "rpa50": 0.6152
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "The Sunshine Garcia Band - For I Am The Moon",
+      "rtf": 0.782,
+      "target_cosine_gain": 0.2093,
+      "rpa50": 0.7072
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Tom McKenzie - Directions",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.4475,
+      "rpa50": 0.7277
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Triviul feat. The Fiend - Widow",
+      "rtf": 0.81,
+      "target_cosine_gain": 0.2025,
+      "rpa50": 0.6614
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "We Fell From The Sky - Not You",
+      "rtf": 0.779,
+      "target_cosine_gain": 0.3877,
+      "rpa50": 0.6689
+    },
+    {
+      "target": "synthetic-zira-en-us-v1",
+      "track": "Zeno - Signs",
+      "rtf": 0.777,
+      "target_cosine_gain": 0.2437,
+      "rpa50": 0.8142
+    }
+  ],
+  "corpus": "backend/tests/model/fixtures/singing_vc_acceptance.json"
+}
